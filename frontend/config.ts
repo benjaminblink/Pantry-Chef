@@ -16,6 +16,12 @@ const NETWORK_IP = Constants.expoConfig?.extra?.hostIp || 'localhost'; // Your c
 const PORT = '3000';
 
 const getApiUrl = () => {
+  // Check for staging environment override
+  const stagingUrl = Constants.expoConfig?.extra?.stagingApiUrl;
+  if (stagingUrl) {
+    return stagingUrl;
+  }
+
   if (__DEV__) {
     // Development mode - use localhost with adb reverse port forwarding
     // Run: adb reverse tcp:3000 tcp:3000

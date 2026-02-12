@@ -7,6 +7,7 @@
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",
     "android:dev": "cross-env JAVA_HOME=\"C:\\Program Files\\Android\\Android Studio\\jbr\" ANDROID_HOME=\"C:\\Users\\bushb\\AppData\\Local\\Android\\Sdk\" npm run android",
+    "android:staging": "cross-env JAVA_HOME=\"C:\\Program Files\\Android\\Android Studio\\jbr\" ANDROID_HOME=\"C:\\Users\\bushb\\AppData\\Local\\Android\\Sdk\" EXPO_PUBLIC_STAGING_API_URL=\"YOUR_RAILWAY_URL/api\" npm run android",
     "android:emulator": "node scripts/start-emulator.js",
     "ios": "expo run:ios",
     "web": "expo start --web",
