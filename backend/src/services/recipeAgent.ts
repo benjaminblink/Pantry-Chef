@@ -220,8 +220,7 @@ function categorizeIngredient(name: string): string {
 export async function generateRecipeWithAgent(
   prompt: string,
   userId?: string,
-  mealType?: string | string[],
-  temperature: number = 0.7 // Lower for consistency, higher (1.1-1.3) for variety when generating multiple recipes
+  mealType?: string | string[]
 ): Promise<{ recipeId: string; recipeTitle: string; newIngredients: string[] }> {
   try {
     const completion = await openai.chat.completions.create({
@@ -233,7 +232,7 @@ export async function generateRecipeWithAgent(
       max_completion_tokens: 8000,
       reasoning_effort: 'low' as any,
       response_format: { type: 'json_object' },
-      temperature,
+      // Note: This model only supports temperature=1 (default), custom values not allowed
     });
 
     console.log('OpenAI completion response:', JSON.stringify(completion, null, 2));
@@ -632,9 +631,8 @@ export async function generateRecipesFromParams(
 ): Promise<{ recipeIds: string[]; newIngredients: string[] }> {
   const prompt = buildPromptFromParams(params, mealType, userStyles, inventory);
 
-  // Use higher temperature for variety when generating multiple recipes from same prompt
   const results = await Promise.all(
-    Array.from({ length: count }, () => generateRecipeWithAgent(prompt, userId, mealType, 1.2))
+    Array.from({ length: count }, () => generateRecipeWithAgent(prompt, userId, mealType))
   );
 
   const recipeIds = results.map(r => r.recipeId);
