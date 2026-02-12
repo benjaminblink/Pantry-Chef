@@ -110,18 +110,42 @@ export default function WalmartProductsModal({
       console.log('WalmartProductsModal: API URL:', url);
       const response = await fetch(url);
       const data = await response.json();
-      console.log('WalmartProductsModal: API response:', data);
+      console.log('WalmartProductsModal: API response status:', response.status, response.ok);
+      console.log('WalmartProductsModal: API response data:', JSON.stringify(data, null, 2));
 
       if (data.success) {
-        setSubstitutes(data.data.substitutes || []);
-        setQualityTiers(data.data.qualityTiers || []);
-        console.log('WalmartProductsModal: Set substitutes:', data.data.substitutes?.length || 0);
-        console.log('WalmartProductsModal: Set quality tiers:', data.data.qualityTiers?.length || 0);
+        const substitutesData = data.data.substitutes || [];
+        const tiersData = data.data.qualityTiers || [];
+
+        console.log('WalmartProductsModal: Processing substitutes:', substitutesData.length);
+        console.log('WalmartProductsModal: Processing quality tiers:', tiersData.length);
+
+        setSubstitutes(substitutesData);
+
+        // Ensure all quality tiers have a valid products array
+        const validatedTiers = tiersData.map((tier: QualityTier) => {
+          const productsArray = tier.products || [];
+          console.log(`WalmartProductsModal: Tier "${tier.tier}" has ${productsArray.length} products`);
+          return {
+            ...tier,
+            products: productsArray
+          };
+        });
+
+        setQualityTiers(validatedTiers);
+        console.log('WalmartProductsModal: Final state - substitutes:', substitutesData.length, 'tiers:', validatedTiers.length);
+
+        if (validatedTiers.length === 0) {
+          console.warn('WalmartProductsModal: WARNING - No quality tiers available');
+        }
+        if (substitutesData.length === 0) {
+          console.warn('WalmartProductsModal: WARNING - No substitutes available');
+        }
       } else {
-        console.warn('WalmartProductsModal: API returned success=false:', data);
+        console.error('WalmartProductsModal: API returned success=false:', data);
       }
     } catch (error) {
-      console.error('Error fetching ingredient options:', error);
+      console.error('WalmartProductsModal: Error fetching ingredient options:', error);
     } finally {
       setLoadingOptions(false);
     }
@@ -326,10 +350,10 @@ export default function WalmartProductsModal({
                       <Text style={styles.tierRange}>
                         ${item.priceRange.min.toFixed(2)} - ${item.priceRange.max.toFixed(2)}
                       </Text>
-                      <Text style={styles.tierCount}>{item.products.length} products</Text>
+                      <Text style={styles.tierCount}>{item.products?.length || 0} products</Text>
 
                       {/* Show all products in this tier */}
-                      {item.products.map((product) => (
+                      {item.products?.map((product) => (
                         <TouchableOpacity
                           key={product.itemId}
                           style={styles.tierProduct}

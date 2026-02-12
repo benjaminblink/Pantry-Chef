@@ -61,14 +61,24 @@ router.get('/ingredient-options/:ingredientId', async (req, res) => {
 
     let qualityTiers: any[] = [];
     try {
+      console.log(`[ingredient-options] Searching Walmart for: ${ingredient.name}`);
       const walmartProducts = await searchWalmartProducts(ingredient.name, consumerId, privateKey);
+      console.log(`[ingredient-options] Walmart returned ${walmartProducts.items?.length || 0} products`);
+
       if (walmartProducts.items && walmartProducts.items.length > 0) {
         qualityTiers = classifyProductsByTier(walmartProducts.items);
         console.log(`[ingredient-options] Classified ${qualityTiers.length} quality tiers`);
+        qualityTiers.forEach((tier: any) => {
+          console.log(`[ingredient-options]   - ${tier.tier}: ${tier.products?.length || 0} products, avg $${tier.avgPrice}`);
+        });
+      } else {
+        console.log(`[ingredient-options] No Walmart products found for ${ingredient.name}`);
       }
     } catch (error) {
       console.error('[ingredient-options] Error fetching Walmart products:', error);
     }
+
+    console.log(`[ingredient-options] Returning ${qualityTiers.length} tiers to frontend`);
 
     res.json({
       success: true,
@@ -143,16 +153,45 @@ router.get('/recipes/:recipeId/ingredient-options/:ingredientId', async (req, re
 
     let qualityTiers: any[] = [];
     try {
+      console.log(`[ingredient-options] Searching Walmart for: ${ingredient.name}`);
       const walmartProducts = await searchWalmartProducts(ingredient.name, consumerId, privateKey);
+      console.log(`[ingredient-options] Walmart returned ${walmartProducts.items?.length || 0} products`);
+
       if (walmartProducts.items && walmartProducts.items.length > 0) {
         // Classify into tiers
         qualityTiers = classifyProductsByTier(walmartProducts.items);
         console.log(`[ingredient-options] Classified ${qualityTiers.length} quality tiers`);
+        qualityTiers.forEach((tier: any) => {
+          console.log(`[ingredient-options]   - ${tier.tier}: ${tier.products?.length || 0} products, avg $${tier.avgPrice}`);
+        });
+      } else {
+        console.log(`[ingredient-options] No Walmart products found for ${ingredient.name}`);
       }
     } catch (error) {
-      console.error(`Error fetching Walmart products for ${ingredient.name}:`, error);
+      console.error(`[ingredient-options] Error fetching Walmart products for ${ingredient.name}:`, error);
       // Continue without quality tiers
     }
+
+    const formattedTiers = qualityTiers.map((tier: any) => ({
+      tier: tier.tier,
+      tierLevel: tier.tierLevel,
+      avgPrice: tier.avgPrice,
+      priceRange: tier.priceRange,
+      // FIX: Send full products array, not just topProducts
+      products: tier.products.map((p: any) => ({
+        itemId: p.itemId,
+        name: p.name,
+        salePrice: p.salePrice,
+        thumbnailImage: p.thumbnailImage,
+        customerRating: p.customerRating,
+        brandName: p.brandName,
+        productUrl: p.productUrl,
+        availableOnline: p.availableOnline,
+      })),
+    }));
+
+    console.log(`[ingredient-options] Returning ${formattedTiers.length} tiers with products:`,
+      formattedTiers.map(t => `${t.tier}(${t.products.length})`).join(', '));
 
     return res.json({
       success: true,
@@ -162,21 +201,7 @@ router.get('/recipes/:recipeId/ingredient-options/:ingredientId', async (req, re
           name: ingredient.name,
         },
         substitutes,
-        qualityTiers: qualityTiers.map((tier: any) => ({
-          tier: tier.tier,
-          tierLevel: tier.tierLevel,
-          productCount: tier.products.length,
-          avgPrice: tier.avgPrice,
-          priceRange: tier.priceRange,
-          // Include top 3 products from each tier
-          topProducts: tier.products.slice(0, 3).map((p: any) => ({
-            itemId: p.itemId,
-            name: p.name,
-            salePrice: p.salePrice,
-            thumbnailImage: p.thumbnailImage,
-            customerRating: p.customerRating,
-          })),
-        })),
+        qualityTiers: formattedTiers,
       },
     });
   } catch (error: any) {
