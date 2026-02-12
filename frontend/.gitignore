@@ -34,3 +34,7 @@ expo-env.d.ts
 
 # Web
 web-build/
+
+# Android signing
+android/app/*.keystore
+android/gradle.properties

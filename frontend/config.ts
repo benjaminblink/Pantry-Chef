@@ -27,8 +27,15 @@ const getApiUrl = () => {
     // Run: adb reverse tcp:3000 tcp:3000
     return `http://localhost:${PORT}/api`;
   }
-  // Production mode - update with your production URL when deployed
-  return 'https://your-production-url.com/api';
+
+  // Production mode - use production URL from environment variable
+  const productionUrl = Constants.expoConfig?.extra?.productionApiUrl;
+  if (productionUrl) {
+    return productionUrl;
+  }
+
+  // Fallback if no production URL is set
+  throw new Error('EXPO_PUBLIC_PRODUCTION_API_URL must be set for production builds');
 };
 
 export const API_URL = getApiUrl();

@@ -50,6 +50,7 @@ export default {
     extra: {
       hostIp: process.env.HOST_IP || 'localhost',
       stagingApiUrl: process.env.EXPO_PUBLIC_STAGING_API_URL || null,
+      productionApiUrl: process.env.EXPO_PUBLIC_PRODUCTION_API_URL || null,
     },
   },
 };
