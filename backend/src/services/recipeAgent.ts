@@ -275,7 +275,7 @@ export async function generateRecipeWithAgent(
     const servings = recipeData.servings || 4;
     const nutrition = recipeData.nutrition || { calories: 0, protein: 0, carbs: 0, fat: 0 };
 
-    const ingredientIds = await Promise.all(
+    const ingredientRecords = await Promise.all(
       ingredients.map(async (ing, index) => {
         const category = categorizeIngredient(ing.name);
         const existingId = await findIngredient(ing.name);
@@ -305,6 +305,29 @@ export async function generateRecipeWithAgent(
         };
       })
     );
+
+    // Deduplicate by ingredientId - merge amounts if same ingredient appears multiple times
+    const ingredientMap = new Map<string, typeof ingredientRecords[0]>();
+    for (const record of ingredientRecords) {
+      const existing = ingredientMap.get(record.ingredientId);
+      if (existing) {
+        console.warn(`⚠️ Duplicate ingredient detected: ${record.ingredientId} - merging amounts`);
+        // Keep the first occurrence but add amounts if units match
+        if (existing.unit === record.unit) {
+          existing.amount += record.amount;
+        } else {
+          // Different units - keep first one and warn
+          console.warn(`⚠️ Same ingredient with different units: ${existing.unit} vs ${record.unit} - keeping first`);
+        }
+      } else {
+        ingredientMap.set(record.ingredientId, record);
+      }
+    }
+
+    const ingredientIds = Array.from(ingredientMap.values()).map((record, index) => ({
+      ...record,
+      sortOrder: index, // Re-index after deduplication
+    }));
 
     const recipeMealType = mealType
       ? (Array.isArray(mealType) ? mealType : [mealType])
