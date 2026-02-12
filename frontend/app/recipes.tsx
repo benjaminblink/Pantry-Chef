@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Switch,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { API_URL } from '../config';
@@ -52,6 +53,7 @@ export default function RecipesScreen() {
   const [view, setView] = useState<'all' | 'personal'>('all');
   const [selectedRecipes, setSelectedRecipes] = useState<Map<string, number>>(new Map());
   const [generatingCart, setGeneratingCart] = useState(false);
+  const [clearCartOnEntry, setClearCartOnEntry] = useState(true);
   const router = useRouter();
   const { token, isAuthenticated } = useAuth();
 
@@ -128,9 +130,9 @@ export default function RecipesScreen() {
         ([recipeId, quantity]) => ({ recipeId, quantity })
       );
 
-      const result = await generateCartWithMergeDetection(recipeSelections);
+      const result = await generateCartWithMergeDetection(recipeSelections, clearCartOnEntry);
       setSelectedRecipes(new Map());
-      navigateAfterCartGeneration(router, result);
+      navigateAfterCartGeneration(router, result, clearCartOnEntry);
     } catch (error) {
       console.error('Error generating cart:', error);
       Alert.alert('Error', 'Failed to generate shopping cart');
@@ -343,25 +345,36 @@ export default function RecipesScreen() {
       {/* Cart footer */}
       {selectedRecipes.size > 0 && (
         <View style={styles.cartFooter}>
-          <View style={styles.cartFooterInfo}>
-            <Text style={styles.cartFooterCount}>
-              {selectedRecipes.size} recipe{selectedRecipes.size !== 1 ? 's' : ''} selected
-            </Text>
-            <Text style={styles.cartFooterSubtext}>
-              {totalMeals} total meal{totalMeals !== 1 ? 's' : ''}
-            </Text>
+          <View style={styles.cartFooterTop}>
+            <View style={styles.cartFooterInfo}>
+              <Text style={styles.cartFooterCount}>
+                {selectedRecipes.size} recipe{selectedRecipes.size !== 1 ? 's' : ''} selected
+              </Text>
+              <Text style={styles.cartFooterSubtext}>
+                {totalMeals} total meal{totalMeals !== 1 ? 's' : ''}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.cartFooterButton, generatingCart && styles.cartFooterButtonDisabled]}
+              onPress={handleContinueToCart}
+              disabled={generatingCart}
+            >
+              {generatingCart ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <Text style={styles.cartFooterButtonText}>Add to Cart</Text>
+              )}
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity
-            style={[styles.cartFooterButton, generatingCart && styles.cartFooterButtonDisabled]}
-            onPress={handleContinueToCart}
-            disabled={generatingCart}
-          >
-            {generatingCart ? (
-              <ActivityIndicator size="small" color="white" />
-            ) : (
-              <Text style={styles.cartFooterButtonText}>Add to Cart</Text>
-            )}
-          </TouchableOpacity>
+          <View style={styles.toggleContainer}>
+            <Text style={styles.toggleLabel}>Clear cart upon entry</Text>
+            <Switch
+              value={clearCartOnEntry}
+              onValueChange={setClearCartOnEntry}
+              trackColor={{ false: '#ddd', true: '#34C759' }}
+              thumbColor="white"
+            />
+          </View>
         </View>
       )}
     </View>
@@ -614,17 +627,33 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
     borderTopWidth: 1,
     borderTopColor: '#e0e0e0',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 5,
   },
+  cartFooterTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
   cartFooterInfo: {
     flex: 1,
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#f5f5f5',
+    padding: 12,
+    borderRadius: 8,
+  },
+  toggleLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
   },
   cartFooterCount: {
     fontSize: 16,

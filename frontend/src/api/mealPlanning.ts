@@ -239,16 +239,18 @@ export async function deleteMealPlan(id: string): Promise<void> {
   });
 }
 
-export async function generateShoppingList(mealPlanId: string): Promise<{
+export async function generateShoppingList(mealPlanId: string, clearCart: boolean = true): Promise<{
   shoppingListId: string;
   items: any[];
   totalEstimatedCost: number;
   potentialMerges?: any[];
 }> {
   const headers = await getAuthHeaders();
+  headers['Content-Type'] = 'application/json';
   const response = await fetch(`${API_URL}/meal-plans/${mealPlanId}/shopping-list`, {
     method: 'POST',
-    headers
+    headers,
+    body: JSON.stringify({ clearCart }),
   });
 
   if (!response.ok) {

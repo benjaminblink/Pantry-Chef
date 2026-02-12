@@ -88,13 +88,13 @@ export interface CartResponse {
  */
 router.post('/generate', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const { recipes } = req.body as { recipes: RecipeSelection[] };
+    const { recipes, clearCart = true } = req.body as { recipes: RecipeSelection[]; clearCart?: boolean };
 
     if (!recipes || !Array.isArray(recipes) || recipes.length === 0) {
       return res.status(400).json({ error: 'Recipes array is required' });
     }
 
-    console.log(`Generating cart for ${recipes.length} recipe selections`);
+    console.log(`Generating cart for ${recipes.length} recipe selections (clearCart: ${clearCart})`);
 
     // Fetch all recipes with their ingredients
     const recipeIds = recipes.map(r => r.recipeId);
@@ -122,6 +122,42 @@ router.post('/generate', authMiddleware, async (req: Request, res: Response) => 
 
     // Build ingredient map (combining quantities from multiple recipes)
     const ingredientMap = new Map<string, CartItem>();
+
+    // If not clearing cart, load existing active cart items and merge them
+    if (!clearCart) {
+      const existingCart = await prisma.shoppingList.findFirst({
+        where: { userId, isActive: true },
+        include: {
+          items: {
+            include: {
+              ingredient: true,
+            },
+          },
+        },
+      });
+
+      if (existingCart && existingCart.items.length > 0) {
+        console.log(`Merging with existing cart (${existingCart.items.length} items)`);
+        for (const item of existingCart.items) {
+          const amount = parseFloat(item.totalAmount);
+          ingredientMap.set(item.ingredient.id, {
+            ingredientId: item.ingredient.id,
+            ingredientName: item.ingredient.name,
+            amount,
+            unit: item.unit,
+            walmartItemId: item.ingredient.walmartItemId,
+            walmartSearchTerm: item.ingredient.walmartSearchTerm,
+            recipes: ['Existing cart'],
+            recipeBreakdown: [{
+              recipeId: 'existing',
+              recipeTitle: 'Existing cart',
+              amount,
+              unit: item.unit,
+            }],
+          });
+        }
+      }
+    }
 
     for (const recipeSelection of recipes) {
       const recipe = recipeData.find(r => r.id === recipeSelection.recipeId);
@@ -229,7 +265,8 @@ router.post('/generate', authMiddleware, async (req: Request, res: Response) => 
       purchaseUnit: ingredient.unit, // Keep original unit for now
     }));
 
-    // Persist to database — deactivate any existing active cart, then create new one
+    // Persist to database — deactivate any existing active cart (always clear), then create new one
+    // Note: Even when clearCart=false, we deactivate the old cart because we've merged its items into the new cart
     await prisma.shoppingList.updateMany({
       where: { userId, isActive: true },
       data: { isActive: false },

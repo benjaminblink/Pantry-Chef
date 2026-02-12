@@ -19,7 +19,8 @@ export interface CartGenerationResult {
  * Shared logic used by both shopping cart and meal plan flows
  */
 export async function generateCartWithMergeDetection(
-  recipeSelections: RecipeSelection[]
+  recipeSelections: RecipeSelection[],
+  clearCart: boolean = true
 ): Promise<CartGenerationResult> {
   const token = await AsyncStorage.getItem('authToken');
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -30,7 +31,7 @@ export async function generateCartWithMergeDetection(
   const response = await fetch(`${API_URL}/cart/generate`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ recipes: recipeSelections }),
+    body: JSON.stringify({ recipes: recipeSelections, clearCart }),
   });
 
   const data = await response.json();
@@ -53,7 +54,8 @@ export async function generateCartWithMergeDetection(
  */
 export function navigateAfterCartGeneration(
   router: any,
-  result: CartGenerationResult
+  result: CartGenerationResult,
+  clearCart: boolean = true
 ) {
   if (result.shouldShowMergeReview) {
     // Navigate to merge review screen
@@ -64,6 +66,7 @@ export function navigateAfterCartGeneration(
         recipes: JSON.stringify(result.recipes),
         ingredients: JSON.stringify(result.ingredients),
         potentialMerges: JSON.stringify(result.potentialMerges),
+        clearCart: clearCart.toString(),
       },
     });
   } else {
@@ -74,6 +77,7 @@ export function navigateAfterCartGeneration(
         shoppingListId: result.shoppingListId,
         recipes: JSON.stringify(result.recipes),
         ingredients: JSON.stringify(result.ingredients),
+        clearCart: clearCart.toString(),
       },
     });
   }

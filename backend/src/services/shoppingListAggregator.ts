@@ -99,9 +99,10 @@ function findMatchingDecision(
  *
  * @param mealPlanId - ID of the meal plan to generate shopping list for
  * @param excludePantry - Whether to exclude items already in pantry (default: false)
+ * @param clearCart - Whether to clear existing cart or merge with it (default: true)
  * @returns Shopping list with consolidated items and merge suggestions
  */
-export async function generateShoppingList(mealPlanId: string, excludePantry: boolean = false): Promise<ShoppingListResult> {
+export async function generateShoppingList(mealPlanId: string, excludePantry: boolean = false, clearCart: boolean = true): Promise<ShoppingListResult> {
   // Get all recipes from meal plan
   const mealPlan = await prisma.mealPlan.findUnique({
     where: { id: mealPlanId },
@@ -130,6 +131,42 @@ export async function generateShoppingList(mealPlanId: string, excludePantry: bo
 
   // Build ingredient list for similarity detection
   const ingredientMap = new Map<string, CartItem>();
+
+  // If not clearing cart, load existing active cart items and merge them
+  if (!clearCart) {
+    const existingCart = await prisma.shoppingList.findFirst({
+      where: { userId, isActive: true },
+      include: {
+        items: {
+          include: {
+            ingredient: true,
+          },
+        },
+      },
+    });
+
+    if (existingCart && existingCart.items.length > 0) {
+      console.log(`Merging with existing cart (${existingCart.items.length} items)`);
+      for (const item of existingCart.items) {
+        const amount = parseFloat(item.totalAmount);
+        ingredientMap.set(item.ingredient.id, {
+          ingredientId: item.ingredient.id,
+          ingredientName: item.ingredient.name,
+          amount,
+          unit: item.unit,
+          walmartItemId: item.ingredient.walmartItemId,
+          walmartSearchTerm: item.ingredient.walmartSearchTerm,
+          recipes: ['Existing cart'],
+          recipeBreakdown: [{
+            recipeId: 'existing',
+            recipeTitle: 'Existing cart',
+            amount,
+            unit: item.unit,
+          }],
+        });
+      }
+    }
+  }
 
   for (const slot of mealPlan.mealSlots) {
     if (!slot.recipe) continue;

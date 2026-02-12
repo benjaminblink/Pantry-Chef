@@ -597,6 +597,7 @@ router.post('/:id/shopping-list', authMiddleware, async (req: Request, res: Resp
     const userId = req.user!.userId;
     const { id } = req.params;
     const excludePantry = req.query.excludePantry === 'true';
+    const { clearCart = true } = req.body;
 
     const mealPlan = await prisma.mealPlan.findUnique({
       where: { id: id as string }
@@ -609,7 +610,7 @@ router.post('/:id/shopping-list', authMiddleware, async (req: Request, res: Resp
       });
     }
 
-    const result = await generateShoppingList(id as string, excludePantry);
+    const result = await generateShoppingList(id as string, excludePantry, clearCart);
 
     res.json({
       success: true,

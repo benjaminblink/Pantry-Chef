@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Switch,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { API_URL } from '../../config';
@@ -55,6 +56,7 @@ export default function RecipeDetailScreen() {
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [loading, setLoading] = useState(true);
   const [addingToCart, setAddingToCart] = useState(false);
+  const [clearCartOnEntry, setClearCartOnEntry] = useState(true);
 
   useEffect(() => {
     fetchRecipe();
@@ -117,6 +119,7 @@ export default function RecipeDetailScreen() {
         },
         body: JSON.stringify({
           recipes: [{ recipeId: recipe.id, quantity: 1 }],
+          clearCart: clearCartOnEntry,
         }),
       });
 
@@ -144,6 +147,14 @@ export default function RecipeDetailScreen() {
       // Refresh credit balance
       await refreshBalance();
 
+      // Prepare navigation params
+      const ingredients = data.ingredients || [];
+      const recipes = data.recipes || [{
+        recipeId: recipe.id,
+        recipeTitle: recipe.title,
+        quantity: 1,
+      }];
+
       // Navigate to shopping cart
       Alert.alert(
         'Added to Cart!',
@@ -153,7 +164,30 @@ export default function RecipeDetailScreen() {
         [
           {
             text: 'View Cart',
-            onPress: () => router.push('/shopping-cart'),
+            onPress: () => {
+              if (data.potentialMerges && data.potentialMerges.length > 0) {
+                router.push({
+                  pathname: '/merge-review',
+                  params: {
+                    shoppingListId: data.shoppingListId,
+                    potentialMerges: JSON.stringify(data.potentialMerges),
+                    ingredients: JSON.stringify(ingredients),
+                    recipes: JSON.stringify(recipes),
+                    clearCart: clearCartOnEntry.toString(),
+                  },
+                });
+              } else {
+                router.push({
+                  pathname: '/shopping-cart',
+                  params: {
+                    shoppingListId: data.shoppingListId,
+                    ingredients: JSON.stringify(ingredients),
+                    recipes: JSON.stringify(recipes),
+                    clearCart: clearCartOnEntry.toString(),
+                  },
+                });
+              }
+            },
           },
           {
             text: 'OK',
@@ -307,30 +341,41 @@ export default function RecipeDetailScreen() {
       </ScrollView>
 
       <View style={styles.bottomBar}>
-        <View style={styles.costInfo}>
-          {recipe.usageCost !== undefined && recipe.usageCost > 0 ? (
-            <>
-              <Text style={styles.costLabel}>Cost to add to cart:</Text>
-              <Text style={styles.costValue}>{recipe.usageCost} credits</Text>
-              {balance !== null && (
-                <Text style={styles.balanceText}>Balance: {balance} credits</Text>
-              )}
-            </>
-          ) : (
-            <Text style={styles.freeText}>Free to add to cart</Text>
-          )}
+        <View style={styles.bottomBarContent}>
+          <View style={styles.costInfo}>
+            {recipe.usageCost !== undefined && recipe.usageCost > 0 ? (
+              <>
+                <Text style={styles.costLabel}>Cost to add to cart:</Text>
+                <Text style={styles.costValue}>{recipe.usageCost} credits</Text>
+                {balance !== null && (
+                  <Text style={styles.balanceText}>Balance: {balance} credits</Text>
+                )}
+              </>
+            ) : (
+              <Text style={styles.freeText}>Free to add to cart</Text>
+            )}
+          </View>
+          <TouchableOpacity
+            style={[styles.addButton, addingToCart && styles.addButtonDisabled]}
+            onPress={handleAddToCart}
+            disabled={addingToCart}
+          >
+            {addingToCart ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.addButtonText}>Add to Cart</Text>
+            )}
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity
-          style={[styles.addButton, addingToCart && styles.addButtonDisabled]}
-          onPress={handleAddToCart}
-          disabled={addingToCart}
-        >
-          {addingToCart ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.addButtonText}>Add to Cart</Text>
-          )}
-        </TouchableOpacity>
+        <View style={styles.toggleContainer}>
+          <Text style={styles.toggleLabel}>Clear cart upon entry</Text>
+          <Switch
+            value={clearCartOnEntry}
+            onValueChange={setClearCartOnEntry}
+            trackColor={{ false: '#ddd', true: '#34C759' }}
+            thumbColor="white"
+          />
+        </View>
       </View>
     </View>
   );
@@ -541,18 +586,34 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#e0e0e0',
     padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 8,
   },
+  bottomBarContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
   costInfo: {
     flex: 1,
     marginRight: 12,
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#f5f5f5',
+    padding: 12,
+    borderRadius: 8,
+  },
+  toggleLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
   },
   costLabel: {
     fontSize: 12,

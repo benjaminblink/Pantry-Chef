@@ -44,7 +44,7 @@ export default function MealPlanDetailScreen() {
 
     try {
       setGeneratingList(true);
-      const result = await generateShoppingList(mealPlan.id);
+      const result = await generateShoppingList(mealPlan.id, clearCartOnEntry);
 
       // Transform shopping list items to cart ingredient format
       const ingredients = (result.items || []).map((item: any) => ({
