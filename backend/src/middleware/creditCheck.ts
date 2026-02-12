@@ -12,8 +12,7 @@ import { prisma } from '../index.js';
 export function requireCredits(amount: number) {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      // @ts-ignore - userId is set by auth middleware
-      const userId = req.userId;
+      const userId = req.user?.userId;
 
       if (!userId) {
         return res.status(401).json({
@@ -109,8 +108,7 @@ export function requireTier(tier: 'pro' | 'power') {
  */
 export async function attachCreditBalance(req: Request, res: Response, next: NextFunction) {
   try {
-    // @ts-ignore
-    const userId = req.userId;
+    const userId = req.user?.userId;
 
     if (!userId) {
       return next();
