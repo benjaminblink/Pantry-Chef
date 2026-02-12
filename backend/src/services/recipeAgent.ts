@@ -342,11 +342,15 @@ export async function generateRecipeWithAgent(
       const embeddingText = `${recipeData.title} ${description} ${ingredients.map(i => i.name).join(' ')}`;
       const embedding = await generateEmbedding(embeddingText);
 
-      await prisma.$executeRaw`
-        UPDATE "Recipe"
-        SET embedding = ${embedding}::vector
-        WHERE id = ${recipe.id}
-      `;
+      if (embedding) {
+        // Convert array to pgvector format: [0.1, 0.2, ...] instead of {0.1, 0.2, ...}
+        const vectorString = `[${embedding.join(',')}]`;
+        await prisma.$executeRaw`
+          UPDATE "Recipe"
+          SET embedding = ${vectorString}::vector
+          WHERE id = ${recipe.id}
+        `;
+      }
     } catch (embeddingError) {
       console.error('Failed to generate embedding, continuing without it:', embeddingError);
     }
