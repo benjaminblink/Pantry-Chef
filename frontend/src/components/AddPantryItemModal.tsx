@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { addInventoryItem } from '../api/mealPlanning';
+import { API_URL } from '../../config';
 
 interface Ingredient {
   id: string;
@@ -35,13 +36,14 @@ export default function AddPantryItemModal({ visible, onClose, onItemAdded }: Pr
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Ingredient[]>([]);
   const [selectedIngredient, setSelectedIngredient] = useState<Ingredient | null>(null);
-  const [customName, setCustomName] = useState('');
   const [amount, setAmount] = useState('');
   const [unit, setUnit] = useState('');
   const [expiresAt, setExpiresAt] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [loading, setLoading] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [similarIngredients, setSimilarIngredients] = useState<Ingredient[]>([]);
 
   useEffect(() => {
     if (searchQuery.length >= 2) {
@@ -54,7 +56,7 @@ export default function AddPantryItemModal({ visible, onClose, onItemAdded }: Pr
   const searchIngredients = async () => {
     try {
       setSearching(true);
-      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/api'}/ingredients?search=${encodeURIComponent(searchQuery)}`);
+      const response = await fetch(`${API_URL}/ingredients?search=${encodeURIComponent(searchQuery)}`);
       const data = await response.json();
       setSearchResults(data.ingredients || []);
     } catch (error) {
@@ -76,31 +78,53 @@ export default function AddPantryItemModal({ visible, onClose, onItemAdded }: Pr
       return;
     }
 
-    if (!selectedIngredient && !customName.trim()) {
-      Alert.alert('Missing Ingredient', 'Please select or enter an ingredient name');
+    if (!searchQuery.trim()) {
+      Alert.alert('Missing Ingredient', 'Please enter an ingredient name');
       return;
     }
 
+    // If no ingredient selected and there are search results, ask for confirmation
+    if (!selectedIngredient && searchResults.length > 0) {
+      setSimilarIngredients(searchResults.slice(0, 3)); // Show top 3 similar
+      setShowConfirmDialog(true);
+      return;
+    }
+
+    await addToPantry();
+  };
+
+  const addToPantry = async (ingredientToAdd?: Ingredient) => {
     try {
       setLoading(true);
+      setShowConfirmDialog(false);
 
-      const ingredientId = selectedIngredient?.id;
-      const name = selectedIngredient ? selectedIngredient.name : customName.trim();
+      let finalIngredientId = ingredientToAdd?.id || selectedIngredient?.id;
+      const name = ingredientToAdd?.name || selectedIngredient?.name || searchQuery.trim();
 
-      // If custom name, we need to create the ingredient first
-      let finalIngredientId = ingredientId;
-      if (!ingredientId && customName.trim()) {
-        const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/api'}/ingredients`, {
+      // If no ingredient selected, create it using upsert
+      if (!finalIngredientId) {
+        const response = await fetch(`${API_URL}/ingredients/upsert`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: customName.trim(), category: 'Other' })
+          body: JSON.stringify({ name: searchQuery.trim(), category: 'Other' })
         });
-        const data = await response.json();
-        finalIngredientId = data.ingredient.id;
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Failed to create ingredient');
+        }
+
+        const result = await response.json();
+        finalIngredientId = result.data?.ingredient?.id;
+
+        if (!finalIngredientId) {
+          console.error('Ingredient creation response:', result);
+          throw new Error('No ingredient ID returned from server');
+        }
       }
 
       await addInventoryItem(
-        finalIngredientId!,
+        finalIngredientId,
         amount,
         unit || undefined,
         expiresAt ? expiresAt.toISOString() : undefined
@@ -111,7 +135,7 @@ export default function AddPantryItemModal({ visible, onClose, onItemAdded }: Pr
       onItemAdded();
     } catch (error) {
       console.error('Error adding item:', error);
-      Alert.alert('Error', 'Failed to add item to pantry');
+      Alert.alert('Error', error instanceof Error ? error.message : 'Failed to add item to pantry');
     } finally {
       setLoading(false);
     }
@@ -121,10 +145,11 @@ export default function AddPantryItemModal({ visible, onClose, onItemAdded }: Pr
     setSearchQuery('');
     setSearchResults([]);
     setSelectedIngredient(null);
-    setCustomName('');
     setAmount('');
     setUnit('');
     setExpiresAt(null);
+    setShowConfirmDialog(false);
+    setSimilarIngredients([]);
   };
 
   const handleClose = () => {
@@ -190,13 +215,7 @@ export default function AddPantryItemModal({ visible, onClose, onItemAdded }: Pr
 
             {!selectedIngredient && searchQuery.length > 0 && searchResults.length === 0 && !searching && (
               <View style={styles.customOption}>
-                <Text style={styles.customLabel}>Or create custom item:</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Custom ingredient name"
-                  value={customName}
-                  onChangeText={setCustomName}
-                />
+                <Text style={styles.customLabel}>No matches found. "{searchQuery}" will be added as a new ingredient.</Text>
               </View>
             )}
           </View>
@@ -268,6 +287,54 @@ export default function AddPantryItemModal({ visible, onClose, onItemAdded }: Pr
             />
           )}
         </ScrollView>
+
+        {/* Confirmation Dialog */}
+        <Modal
+          visible={showConfirmDialog}
+          animationType="fade"
+          transparent={true}
+          onRequestClose={() => setShowConfirmDialog(false)}
+        >
+          <View style={styles.dialogOverlay}>
+            <View style={styles.dialog}>
+              <Text style={styles.dialogTitle}>Did you mean?</Text>
+              <Text style={styles.dialogSubtitle}>
+                We found similar ingredients. Select one or create "{searchQuery}":
+              </Text>
+
+              <View style={styles.dialogOptions}>
+                {similarIngredients.map(ingredient => (
+                  <TouchableOpacity
+                    key={ingredient.id}
+                    style={styles.dialogOption}
+                    onPress={() => addToPantry(ingredient)}
+                  >
+                    <Text style={styles.dialogOptionText}>{ingredient.name}</Text>
+                    {ingredient.category && (
+                      <Text style={styles.dialogOptionCategory}>{ingredient.category}</Text>
+                    )}
+                  </TouchableOpacity>
+                ))}
+
+                <TouchableOpacity
+                  style={[styles.dialogOption, styles.dialogOptionCreate]}
+                  onPress={() => addToPantry()}
+                >
+                  <Text style={styles.dialogOptionCreateText}>
+                    Create new: "{searchQuery}"
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={styles.dialogCancelButton}
+                onPress={() => setShowConfirmDialog(false)}
+              >
+                <Text style={styles.dialogCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       </View>
     </Modal>
   );
@@ -398,5 +465,71 @@ const styles = StyleSheet.create({
   clearDateText: {
     fontSize: 14,
     color: '#EF4444',
+  },
+  dialogOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  dialog: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+  },
+  dialogTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#333',
+    marginBottom: 8,
+  },
+  dialogSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  dialogOptions: {
+    marginBottom: 16,
+  },
+  dialogOption: {
+    backgroundColor: '#f9f9f9',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  dialogOptionText: {
+    fontSize: 16,
+    color: '#333',
+    fontWeight: '600',
+    marginBottom: 4,
+    textTransform: 'capitalize',
+  },
+  dialogOptionCategory: {
+    fontSize: 12,
+    color: '#999',
+  },
+  dialogOptionCreate: {
+    backgroundColor: '#E6F4FE',
+    borderColor: '#10B981',
+  },
+  dialogOptionCreateText: {
+    fontSize: 16,
+    color: '#10B981',
+    fontWeight: '600',
+  },
+  dialogCancelButton: {
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  dialogCancelText: {
+    fontSize: 16,
+    color: '#666',
+    fontWeight: '600',
   },
 });

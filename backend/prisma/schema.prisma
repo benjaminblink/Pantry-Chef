@@ -30,6 +30,7 @@ model User {
   preferences            UserPreferences?
   recipesCreated         Recipe[]
   recipeHistory          RecipeHistory[]
+  cookingEvents          CookingEvent[]
   userPreferences        UserPreference[]
   mealPlans              MealPlan[]
   inventory              UserInventory[]
@@ -105,6 +106,7 @@ model Recipe {
   // Relations
   recipeIngredients    RecipeIngredient[]
   history              RecipeHistory[]
+  cookingEvents        CookingEvent[]
   mealSlots            MealSlot[]
   userCustomizations   UserRecipeCustomization[]
   recipeUsages         RecipeUsage[]
@@ -137,6 +139,35 @@ model RecipeHistory {
   @@index([recipeId])
   @@index([userId, didCook])
   @@index([userId, isFavorite])
+}
+
+// Tracks actual cooking events (can have multiple per recipe)
+model CookingEvent {
+  id       String   @id @default(cuid())
+  userId   String
+  recipeId String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe   Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  cookedAt DateTime @default(now())
+
+  // Optional link to meal plan (if cooked as part of a plan)
+  mealPlanId String?
+  mealPlan   MealPlan? @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)
+
+  mealSlotId String?
+  mealSlot   MealSlot? @relation(fields: [mealSlotId], references: [id], onDelete: Cascade)
+
+  // Track pantry deduction
+  pantryDeducted Boolean @default(false)
+
+  // Optional notes
+  notes String?
+
+  @@index([userId, cookedAt])
+  @@index([recipeId])
+  @@index([mealPlanId])
+  @@index([userId, pantryDeducted])
 }
 
 model Ingredient {
@@ -267,6 +298,7 @@ model MealPlan {
 
   // Relations
   mealSlots     MealSlot[]
+  cookingEvents CookingEvent[]
   shoppingLists ShoppingList[]
 
   @@index([userId, startDate])
@@ -291,9 +323,14 @@ model MealSlot {
   // Completion tracking
   isCompleted Boolean   @default(false)
   completedAt DateTime?
+  isSkipped   Boolean   @default(false)
+  skippedAt   DateTime?
 
   // Optional notes
   notes String?
+
+  // Relations
+  cookingEvents CookingEvent[]
 
   @@unique([mealPlanId, dayOfWeek, mealType])
   @@index([mealPlanId, date])

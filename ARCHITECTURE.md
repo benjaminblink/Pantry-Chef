@@ -422,10 +422,9 @@ Credits only gate features that cost real money to run (AI/API calls):
 - **Key Insight**: A free user who shops weekly at Walmart earns ~20 credits/month via checkouts. This covers ~20 AI meal plans, making the free tier genuinely useful while generating affiliate revenue.
 
 #### Subscription Monthly Credits
-- **Pro**: 40 credits/month ($6.99)
-- **Power**: 100 credits/month ($12.99)
+- **Pro**: 40 credits/month ($4.99/month or $49.99/year)
 - **Implementation**: RevenueCat webhook triggers `grantSubscriptionCredits()`
-- **Product IDs**: `pro_monthly`, `power_monthly`
+- **Product IDs**: `Pro_Tier_Monthly_499`, `Pro_Tier_Annual_499`
 
 #### Credit Purchases (Consumables)
 - **Packages**: $1.99 (10 credits), $4.99 (30 credits), $9.99 (75 credits)
@@ -573,11 +572,15 @@ handleFeatureGateError(response, navigation)  // Response interceptor for 403 ti
 
 ### RevenueCat Product Configuration
 
-#### Subscription Tiers
-- `pro_monthly` → $6.99, 40 credits/month, entitlement: `pantry-chef Pro`
-- `power_monthly` → $12.99, 100 credits/month, entitlements: `pantry-chef Pro` + `pantry-chef Power`
+#### Offering
+- Offering ID: `Pro_Tier_499`
+- Paywall: "Pantry-Chef Paywall" (configured in RevenueCat dashboard)
 
-**Note**: Pro entitlement unlocks Pro features. Power entitlement unlocks Power-exclusive features. Power users have BOTH entitlements.
+#### Subscription Products
+- `Pro_Tier_Monthly_499` → $4.99/month, 40 credits/month, entitlement: `pantry-chef Pro`
+- `Pro_Tier_Annual_499` → $49.99/year, 40 credits/month, entitlement: `pantry-chef Pro`
+
+**Note**: Currently single-tier (Pro only). Power tier ($12.99) removed as too expensive for market.
 
 #### Consumables
 - `credits_10` → $1.99, 10 credits (one-time)
@@ -595,34 +598,34 @@ const isPower = customerInfo.entitlements.active['pantry-chef Power']?.isActive 
 
 #### Tier Comparison
 
-| Feature | Free | Pro ($6.99/mo) | Power ($12.99/mo) |
-|---------|------|----------------|-------------------|
-| **Credits** | Earn only (signup + Walmart) | 40/mo | 100/mo |
-| **Credit purchases** | ✅ | ✅ | ✅ |
-| **Manual recipe entry** | ✅ | ✅ | ✅ |
-| **Recipe browsing** | ✅ | ✅ | ✅ |
-| **Shopping list + Walmart** | ✅ | ✅ | ✅ |
-| **Ingredient merging** | ✅ | ✅ | ✅ |
-| **Basic dietary preferences** | ✅ | ✅ | ✅ |
-| **AI features (via credits)** | ✅ | ✅ | ✅ |
-| **Advanced settings/macros** | ❌ | ✅ | ✅ |
-| **Cookbook page scanning** | ❌ | ✅ | ✅ |
-| **Grocery cost tracking** | ❌ | ✅ | ✅ |
-| **Recipe recommendations** | ❌ | ✅ | ✅ |
-| **Nutrition analytics** | ❌ | ✅ | ✅ |
-| **Full pantry tracking** | ❌ | ❌ | ✅ |
-| **Cook from pantry AI** | ❌ | ❌ | ✅ |
-| **Family profiles** | ❌ | ❌ | ✅ |
+| Feature | Free | Pro ($4.99/mo) |
+|---------|------|----------------|
+| **Credits** | Earn only (signup + Walmart) | 40/mo |
+| **Credit purchases** | ✅ | ✅ |
+| **Manual recipe entry** | ✅ | ✅ |
+| **Recipe browsing** | ✅ | ✅ |
+| **Shopping list + Walmart** | ✅ | ✅ |
+| **Ingredient merging** | ✅ | ✅ |
+| **Basic dietary preferences** | ✅ | ✅ |
+| **AI features (via credits)** | ✅ | ✅ |
+| **Advanced settings/macros** | ❌ | ✅ |
+| **Cookbook page scanning** | ❌ | ✅ |
+| **Grocery cost tracking** | ❌ | ✅ |
+| **Recipe recommendations** | ❌ | ✅ |
+| **Nutrition analytics** | ❌ | ✅ |
+| **Full pantry tracking** | ❌ | ✅ |
+| **Cook from pantry AI** | ❌ | ✅ |
+| **Family profiles** | ❌ | ✅ |
 
 #### Design Principles
 
 1. **Never gate the path to Walmart checkout** - Recipe browsing, shopping lists, Walmart integration are always free. Free users generate affiliate revenue.
 2. **Credits gate AI costs** - Every tier uses credits for AI features. Higher tiers get more monthly credits. Free users earn credits via Walmart checkouts.
 3. **Subscription gates premium features** - Features that are expensive to run (AI vision for cookbook scanning, extra AI calls for pantry suggestions) or that provide power-user value (analytics, advanced settings) require a subscription.
-4. **Each tier tells a story:**
+4. **Simplified single-tier model:**
    - **Free**: "I cook from recipes and shop at Walmart" (generates affiliate revenue)
-   - **Pro ($6.99)**: "I want to be smarter about my cooking" (advanced settings, cookbook scanning, cost tracking, recommendations, nutrition)
-   - **Power ($12.99)**: "I want the app to run my kitchen" (pantry tracking, cook-from-pantry AI, family profiles)
+   - **Pro ($4.99)**: "I want all the features" (unlimited AI features, pantry tracking, cookbook scanning, analytics, family profiles)
+   - Affordable pricing ($4.99) maximizes subscription adoption while keeping Walmart affiliate revenue as primary monetization
 
 #### Upgrade Moments
 

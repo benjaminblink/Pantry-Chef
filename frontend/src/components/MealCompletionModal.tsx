@@ -18,52 +18,102 @@ interface MealCompletionModalProps {
   };
   onClose: () => void;
   onComplete: (completedSlotIds: string[]) => Promise<void>;
+  onSkipSlots?: (slotIds: string[]) => Promise<void>;
 }
+
+type MealStatus = 'pending' | 'cooked' | 'skipped';
 
 export default function MealCompletionModal({
   visible,
   mealPlan,
   onClose,
-  onComplete
+  onComplete,
+  onSkipSlots
 }: MealCompletionModalProps) {
-  const [selectedSlots, setSelectedSlots] = useState<Set<string>>(
-    new Set(
-      mealPlan.mealSlots
-        .filter(slot => !slot.isCompleted && slot.recipe)
-        .map(slot => slot.id)
-    )
-  );
+  // Track status for each slot: 'pending' (default), 'cooked' (mark complete), 'skipped' (remove from plan)
+  const [mealStatuses, setMealStatuses] = useState<Record<string, MealStatus>>(() => {
+    const statuses: Record<string, MealStatus> = {};
+    mealPlan.mealSlots
+      .filter(slot => !slot.isCompleted && slot.recipe)
+      .forEach(slot => {
+        statuses[slot.id] = 'pending';
+      });
+    return statuses;
+  });
   const [loading, setLoading] = useState(false);
 
-  const handleToggleSlot = (slotId: string) => {
-    const newSelection = new Set(selectedSlots);
-    if (newSelection.has(slotId)) {
-      newSelection.delete(slotId);
-    } else {
-      newSelection.add(slotId);
-    }
-    setSelectedSlots(newSelection);
+  const setMealStatus = (slotId: string, status: MealStatus) => {
+    setMealStatuses(prev => ({
+      ...prev,
+      [slotId]: status
+    }));
   };
 
   const handleConfirm = async () => {
-    if (selectedSlots.size === 0) {
-      Alert.alert('No Meals Selected', 'Please select at least one meal to complete.');
+    const cookedSlots = Object.entries(mealStatuses)
+      .filter(([_, status]) => status === 'cooked')
+      .map(([slotId]) => slotId);
+
+    const skippedSlots = Object.entries(mealStatuses)
+      .filter(([_, status]) => status === 'skipped')
+      .map(([slotId]) => slotId);
+
+    if (cookedSlots.length === 0 && skippedSlots.length === 0) {
+      Alert.alert('No Changes', 'Please mark at least one meal as cooked or didn\'t cook.');
       return;
     }
 
     try {
       setLoading(true);
-      await onComplete(Array.from(selectedSlots));
+
+      // First, mark cooked meals as complete (this will deduct from pantry)
+      if (cookedSlots.length > 0) {
+        await onComplete(cookedSlots);
+      }
+
+      // Then, mark skipped meals (preserves meal plan for future reference)
+      if (skippedSlots.length > 0 && onSkipSlots) {
+        await onSkipSlots(skippedSlots);
+      }
+
       onClose();
     } catch (error) {
-      console.error('Error completing meals:', error);
+      console.error('Error updating meals:', error);
       Alert.alert(
         'Error',
-        error instanceof Error ? error.message : 'Failed to complete meals'
+        error instanceof Error ? error.message : 'Failed to update meals'
       );
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDidntCookAny = () => {
+    Alert.alert(
+      'Didn\'t Cook Any Meals?',
+      'This will mark all incomplete meals as skipped. Your meal plan will be preserved for future reference.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Mark as Skipped',
+          style: 'destructive',
+          onPress: async () => {
+            const allSlotIds = Object.keys(mealStatuses);
+            if (allSlotIds.length > 0 && onSkipSlots) {
+              try {
+                setLoading(true);
+                await onSkipSlots(allSlotIds);
+                onClose();
+              } catch (error) {
+                Alert.alert('Error', 'Failed to mark meals as skipped');
+              } finally {
+                setLoading(false);
+              }
+            }
+          }
+        }
+      ]
+    );
   };
 
   // Group slots by day
@@ -123,35 +173,54 @@ export default function MealCompletionModal({
                 {Object.entries(slotsByDay).map(([dateKey, slots]) => (
                   <View key={dateKey} style={styles.daySection}>
                     <Text style={styles.dayTitle}>{dateKey}</Text>
-                    {slots.map(slot => (
-                      <TouchableOpacity
-                        key={slot.id}
-                        style={styles.mealRow}
-                        onPress={() => handleToggleSlot(slot.id)}
-                      >
-                        <View style={styles.checkboxContainer}>
-                          <View style={[
-                            styles.checkbox,
-                            selectedSlots.has(slot.id) && styles.checkboxChecked
-                          ]}>
-                            {selectedSlots.has(slot.id) && (
-                              <Text style={styles.checkmark}>✓</Text>
-                            )}
+                    {slots.map(slot => {
+                      const status = mealStatuses[slot.id] || 'pending';
+                      return (
+                        <View key={slot.id} style={styles.mealCard}>
+                          <View style={styles.mealInfo}>
+                            <View style={styles.mealHeader}>
+                              <Text style={styles.mealEmoji}>
+                                {getMealTypeEmoji(slot.mealType)}
+                              </Text>
+                              <Text style={styles.mealType}>
+                                {slot.mealType.charAt(0).toUpperCase() + slot.mealType.slice(1)}
+                              </Text>
+                            </View>
+                            <Text style={styles.recipeName}>{slot.recipe?.title}</Text>
+                          </View>
+
+                          <View style={styles.statusButtons}>
+                            <TouchableOpacity
+                              style={[
+                                styles.statusButton,
+                                status === 'cooked' && styles.statusButtonActive
+                              ]}
+                              onPress={() => setMealStatus(slot.id, 'cooked')}
+                            >
+                              <Text style={[
+                                styles.statusButtonText,
+                                status === 'cooked' && styles.statusButtonTextActive
+                              ]}>✓ Cooked</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              style={[
+                                styles.statusButton,
+                                styles.statusButtonSkip,
+                                status === 'skipped' && styles.statusButtonSkipActive
+                              ]}
+                              onPress={() => setMealStatus(slot.id, 'skipped')}
+                            >
+                              <Text style={[
+                                styles.statusButtonText,
+                                styles.statusButtonSkipText,
+                                status === 'skipped' && styles.statusButtonSkipTextActive
+                              ]}>✕ Didn't Cook</Text>
+                            </TouchableOpacity>
                           </View>
                         </View>
-                        <View style={styles.mealInfo}>
-                          <View style={styles.mealHeader}>
-                            <Text style={styles.mealEmoji}>
-                              {getMealTypeEmoji(slot.mealType)}
-                            </Text>
-                            <Text style={styles.mealType}>
-                              {slot.mealType.charAt(0).toUpperCase() + slot.mealType.slice(1)}
-                            </Text>
-                          </View>
-                          <Text style={styles.recipeName}>{slot.recipe?.title}</Text>
-                        </View>
-                      </TouchableOpacity>
-                    ))}
+                      );
+                    })}
                   </View>
                 ))}
               </>
@@ -170,16 +239,16 @@ export default function MealCompletionModal({
             <TouchableOpacity
               style={[
                 styles.confirmButton,
-                (loading || selectedSlots.size === 0) && styles.confirmButtonDisabled
+                loading && styles.confirmButtonDisabled
               ]}
               onPress={handleConfirm}
-              disabled={loading || selectedSlots.size === 0}
+              disabled={loading}
             >
               {loading ? (
                 <ActivityIndicator size="small" color="white" />
               ) : (
                 <Text style={styles.confirmButtonText}>
-                  Complete {selectedSlots.size} {selectedSlots.size === 1 ? 'Meal' : 'Meals'}
+                  Confirm
                 </Text>
               )}
             </TouchableOpacity>
@@ -250,34 +319,49 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 12,
   },
-  mealRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  mealCard: {
     backgroundColor: '#f9f9f9',
     borderRadius: 8,
     padding: 12,
     marginBottom: 8,
   },
-  checkboxContainer: {
-    marginRight: 12,
+  statusButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
   },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 4,
+  statusButton: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
     borderWidth: 2,
-    borderColor: '#ddd',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkboxChecked: {
-    backgroundColor: '#10B981',
     borderColor: '#10B981',
+    backgroundColor: 'white',
+    alignItems: 'center',
   },
-  checkmark: {
+  statusButtonActive: {
+    backgroundColor: '#10B981',
+  },
+  statusButtonSkip: {
+    borderColor: '#EF4444',
+  },
+  statusButtonSkipActive: {
+    backgroundColor: '#EF4444',
+  },
+  statusButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#10B981',
+  },
+  statusButtonTextActive: {
     color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
+  },
+  statusButtonSkipText: {
+    color: '#EF4444',
+  },
+  statusButtonSkipTextActive: {
+    color: 'white',
   },
   mealInfo: {
     flex: 1,

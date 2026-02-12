@@ -17,13 +17,9 @@ const PORT = '3000';
 
 const getApiUrl = () => {
   if (__DEV__) {
-    // Development mode - use appropriate IP based on platform
-    // Android emulator needs 10.0.2.2 to access host machine
-    // Physical Android devices and iOS need the actual network IP
-    const isAndroidEmulator = Platform.OS === 'android' && !__DEV__ ? false : Platform.OS === 'android';
-    const devIP = isAndroidEmulator ? '10.0.2.2' : NETWORK_IP;
-
-    return `http://${devIP}:${PORT}/api`;
+    // Development mode - use localhost with adb reverse port forwarding
+    // Run: adb reverse tcp:3000 tcp:3000
+    return `http://localhost:${PORT}/api`;
   }
   // Production mode - update with your production URL when deployed
   return 'https://your-production-url.com/api';

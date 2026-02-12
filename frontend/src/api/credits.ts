@@ -66,3 +66,22 @@ export async function getTransactions(options?: {
   if (!data.success) throw new Error(data.message || 'Failed to get transactions');
   return { transactions: data.transactions, total: data.total };
 }
+
+/**
+ * Sync subscription status with backend (for testing and immediate feedback)
+ * In production, webhooks handle this automatically
+ */
+export async function syncSubscriptionStatus(
+  tier: 'pro' | 'power' | null,
+  entitlements?: string[]
+): Promise<{ balance: number; tier: 'pro' | 'power' | null }> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/credits/sync-subscription`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ tier, entitlements }),
+  });
+  const data = await response.json();
+  if (!data.success) throw new Error(data.message || 'Failed to sync subscription');
+  return { balance: data.balance, tier: data.tier };
+}

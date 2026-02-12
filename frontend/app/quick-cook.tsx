@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,19 +8,39 @@ import {
   ActivityIndicator,
   Alert
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { quickCook, QuickCookRecipe } from '../src/api/inventory';
 import { useCredits } from '../contexts/CreditContext';
+import { useProFeature } from '../hooks/useProFeature';
 
 export default function QuickCookScreen() {
+  const { checkProAccess } = useProFeature();
   const { balance, refreshBalance } = useCredits();
   const [recipes, setRecipes] = useState<QuickCookRecipe[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const hasCheckedAccess = useRef(false);
 
-  useEffect(() => {
-    generateRecipes();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      // Check Pro access on screen focus
+      if (!checkProAccess()) {
+        // Only redirect to paywall once to prevent infinite loop
+        if (!hasCheckedAccess.current) {
+          hasCheckedAccess.current = true;
+          // Use push so paywall can navigate back after purchase
+          router.push('/paywall');
+        } else {
+          // User came back from paywall without purchasing - go to home
+          router.replace('/');
+        }
+        return;
+      }
+      // Reset the flag when user has access (after returning from paywall)
+      hasCheckedAccess.current = false;
+      generateRecipes();
+    }, [checkProAccess])
+  );
 
   const generateRecipes = async () => {
     // Check credits

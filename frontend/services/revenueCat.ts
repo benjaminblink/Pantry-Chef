@@ -10,9 +10,12 @@ export const ENTITLEMENT_ID = ENTITLEMENT_PRO;
 
 // Subscription Product IDs - must match your RevenueCat dashboard configuration
 export const PRODUCT_IDS = {
-  PRO_MONTHLY: 'pro_monthly',
-  POWER_MONTHLY: 'power_monthly',
+  PRO_MONTHLY: 'Pro_Tier_Monthly_499',
+  PRO_ANNUAL: 'Pro_Tier_Annual_499',
 } as const;
+
+// Offering identifier for the paywall
+export const OFFERING_ID = 'Pro_Tier_499';
 
 // Consumable Product IDs
 export const CONSUMABLE_IDS = {
@@ -156,19 +159,28 @@ export const getCustomerInfo = async () => {
 
 /**
  * Get available offerings (subscription packages)
+ * First tries to get the specific offering by ID, falls back to current offering
  *
- * @returns Current offering with available packages
+ * @returns Offering with available packages
  */
 export const getOfferings = async () => {
   try {
     const offerings = await Purchases.getOfferings();
 
+    // Try to get our specific offering first
+    const targetOffering = offerings.all[OFFERING_ID];
+    if (targetOffering) {
+      console.log('RevenueCat: Found offering:', OFFERING_ID, 'with', targetOffering.availablePackages.length, 'packages');
+      return targetOffering;
+    }
+
+    // Fallback to current offering
     if (!offerings.current) {
       console.warn('RevenueCat: No current offering found');
       return null;
     }
 
-    console.log('RevenueCat: Available packages:', offerings.current.availablePackages.length);
+    console.log('RevenueCat: Using current offering with', offerings.current.availablePackages.length, 'packages');
     return offerings.current;
   } catch (error) {
     console.error('RevenueCat: Failed to get offerings:', error);

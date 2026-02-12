@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   Platform,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSubscription } from '../../contexts/SubscriptionContext';
 import { useCredits } from '../../contexts/CreditContext';
@@ -17,7 +17,14 @@ export default function SettingsScreen() {
   const router = useRouter();
   const { user, logout } = useAuth();
   const { isProUser } = useSubscription();
-  const { balance } = useCredits();
+  const { balance, refreshBalance } = useCredits();
+
+  // Refresh balance when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      refreshBalance();
+    }, [refreshBalance])
+  );
 
   const handleLogout = async () => {
     await logout();

@@ -4,7 +4,7 @@ export default {
     slug: 'pantry-chef',
     version: '1.0.0',
     orientation: 'portrait',
-    icon: './assets/images/icon.png',
+    icon: './assets/pantry-chef-icon-v5.png',
     scheme: 'pantrychef',
     userInterfaceStyle: 'automatic',
     newArchEnabled: true,
@@ -33,7 +33,7 @@ export default {
       [
         'expo-splash-screen',
         {
-          image: './assets/images/icon.png',
+          image: './assets/pantry-chef-icon-v5.png',
           imageWidth: 200,
           resizeMode: 'contain',
           backgroundColor: '#ffffff',

@@ -192,9 +192,15 @@ function getTierFromEntitlements(entitlementIds: string[], productId: string): '
 
 /**
  * Map RevenueCat product ID to subscription tier
- * Product IDs: pro_monthly, power_monthly
+ * Product IDs: Pro_Tier_Monthly_499, Pro_Tier_Annual_499
  */
 function getTierFromProductId(productId: string): 'pro' | 'power' | null {
+  // New product IDs
+  if (productId === 'Pro_Tier_Monthly_499' || productId === 'Pro_Tier_Annual_499') {
+    return 'pro';
+  }
+
+  // Legacy product IDs (for backwards compatibility)
   if (productId === 'power_monthly' || productId.includes('power')) {
     return 'power';
   } else if (productId === 'pro_monthly' || productId.includes('pro')) {

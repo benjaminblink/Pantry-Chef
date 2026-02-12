@@ -19,19 +19,22 @@ export default function PaywallScreen() {
   const [isRestoring, setIsRestoring] = useState(false);
   const [useNativePaywall, setUseNativePaywall] = useState(true);
 
-  // If user is already Pro, navigate back
+  useEffect(() => {
+    console.log('💳 PaywallScreen mounted', {
+      isProUser,
+      hasOffering: !!currentOffering,
+      offeringId: currentOffering?.identifier
+    });
+  }, []);
+
+  // If user becomes Pro (purchase completed), navigate back
   useEffect(() => {
     if (isProUser) {
-      Alert.alert(
-        'Already Subscribed',
-        'You already have Pantry Chef Pro!',
-        [
-          {
-            text: 'OK',
-            onPress: () => router.back(),
-          },
-        ]
-      );
+      console.log('ℹ️ User is Pro - navigating back');
+      // Use setTimeout to ensure we're not in the middle of a render
+      setTimeout(() => {
+        router.back();
+      }, 100);
     }
   }, [isProUser]);
 
@@ -71,29 +74,72 @@ export default function PaywallScreen() {
     }
   };
 
-  const handlePurchaseCompleted = () => {
-    console.log('Purchase completed successfully!');
-    Alert.alert(
-      'Welcome to Pro!',
-      'Thank you for subscribing to Pantry Chef Pro!',
-      [
-        {
-          text: 'Get Started',
-          onPress: () => router.back(),
-        },
-      ]
-    );
+  const handlePurchaseCompleted = async () => {
+    console.log('✅ Purchase completed successfully!');
+    try {
+      // Refresh subscription status (this triggers backend sync)
+      await refreshSubscriptionStatus();
+      console.log('✅ Subscription status refreshed');
+
+      Alert.alert(
+        'Welcome to Pro!',
+        'Thank you for subscribing to Pantry Chef Pro!',
+        [
+          {
+            text: 'Get Started',
+            onPress: () => router.back(),
+          },
+        ]
+      );
+    } catch (error) {
+      console.error('❌ Error after purchase:', error);
+      // Still show success - the purchase went through
+      Alert.alert(
+        'Welcome to Pro!',
+        'Thank you for subscribing to Pantry Chef Pro!',
+        [
+          {
+            text: 'Get Started',
+            onPress: () => router.back(),
+          },
+        ]
+      );
+    }
   };
 
   const handlePurchaseError = (error: any) => {
-    console.error('Purchase error:', error);
-    if (!error.userCancelled) {
-      Alert.alert(
-        'Purchase Failed',
-        error.message || 'Something went wrong. Please try again.',
-        [{ text: 'OK' }]
-      );
+    console.log('🔴 handlePurchaseError called with:', JSON.stringify(error, null, 2));
+
+    // Extract error details
+    const errorCode = error?.error?.code || error?.code;
+    const readableCode = error?.error?.readableErrorCode || error?.readableErrorCode;
+    const message = error?.error?.message || error?.message;
+    const userCancelled = error?.userCancelled || error?.error?.userCancelled;
+
+    console.log('🔴 Error details:', { errorCode, readableCode, message, userCancelled });
+
+    // Don't show alert if user cancelled
+    if (userCancelled) {
+      console.log('🔴 User cancelled purchase');
+      return;
     }
+
+    // In development: handle test store simulated errors silently
+    if (__DEV__) {
+      if (errorCode === 42 || readableCode === 'TestStoreSimulatedPurchaseError') {
+        // Test store randomly simulates failures - ignore them silently in dev
+        console.log('🟡 Test store simulated purchase failure - this is expected behavior');
+        return;
+      }
+    }
+
+    // Show error for real failures (production) or non-test errors (dev)
+    console.log('🔴 Showing error alert to user');
+    Alert.alert(
+      'Purchase Failed',
+      message || 'Something went wrong. Please try again.',
+      [{ text: 'OK' }]
+    );
   };
 
   if (isProUser) {

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -15,24 +15,40 @@ import { getUserInventory, removeInventoryItem, getMealPlans } from '../src/api/
 import type { UserInventory, MealPlan } from '../src/types/mealPlanning';
 import AddPantryItemModal from '../src/components/AddPantryItemModal';
 import ScanReceiptModal from '../src/components/ScanReceiptModal';
-import MealCompletionModal from '../src/components/MealCompletionModal';
-import { completeMealPlan } from '../src/api/inventory';
+import ManageMealsModal from '../src/components/ManageMealsModal';
+import { useProFeature } from '../hooks/useProFeature';
 
 export default function PantryScreen() {
+  const { checkProAccess } = useProFeature();
   const [inventory, setInventory] = useState<UserInventory[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [scanModalVisible, setScanModalVisible] = useState(false);
+  const [manageMealsModalVisible, setManageMealsModalVisible] = useState(false);
   const [activeMealPlans, setActiveMealPlans] = useState<MealPlan[]>([]);
-  const [selectedMealPlan, setSelectedMealPlan] = useState<MealPlan | null>(null);
-  const [completionModalVisible, setCompletionModalVisible] = useState(false);
+  const hasCheckedAccess = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
+      // Check Pro access on screen focus
+      if (!checkProAccess()) {
+        // Only redirect to paywall once to prevent infinite loop
+        if (!hasCheckedAccess.current) {
+          hasCheckedAccess.current = true;
+          // Use push so paywall can navigate back after purchase
+          router.push('/paywall');
+        } else {
+          // User came back from paywall without purchasing - go to home
+          router.replace('/');
+        }
+        return;
+      }
+      // Reset the flag when user has access (after returning from paywall)
+      hasCheckedAccess.current = false;
       loadInventory();
-    }, [])
+    }, [checkProAccess])
   );
 
   const loadInventory = async () => {
@@ -97,41 +113,9 @@ export default function PantryScreen() {
     loadInventory();
   };
 
-  const handleOpenCompletionModal = (mealPlan: MealPlan) => {
-    setSelectedMealPlan(mealPlan);
-    setCompletionModalVisible(true);
-  };
-
-  const handleCompleteMeals = async (completedSlotIds: string[]) => {
-    if (!selectedMealPlan) return;
-
-    try {
-      const result = await completeMealPlan(selectedMealPlan.id, completedSlotIds);
-
-      // Show success message
-      Alert.alert(
-        'Meals Completed!',
-        result.message,
-        [{ text: 'OK' }]
-      );
-
-      // Reload data
-      await loadInventory();
-      setCompletionModalVisible(false);
-      setSelectedMealPlan(null);
-    } catch (error) {
-      throw error; // Let MealCompletionModal handle the error
-    }
-  };
-
-  const getMealPlanStatus = (mealPlan: MealPlan) => {
-    const now = new Date();
-    const startDate = new Date(mealPlan.startDate);
-    const endDate = new Date(mealPlan.endDate);
-
-    if (now < startDate) return 'upcoming';
-    if (now > endDate) return 'ended';
-    return 'active';
+  const handleMealsCompleted = () => {
+    setManageMealsModalVisible(false);
+    loadInventory(); // Refresh pantry after meals are completed
   };
 
   const filteredInventory = inventory.filter(item =>
@@ -147,7 +131,7 @@ export default function PantryScreen() {
     return acc;
   }, {} as Record<string, UserInventory[]>);
 
-  const getExpirationStatus = (expiresAt: string | null) => {
+  const getExpirationStatus = (expiresAt: string | null | undefined) => {
     if (!expiresAt) return null;
     const daysUntilExpiry = Math.floor(
       (new Date(expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
@@ -192,6 +176,16 @@ export default function PantryScreen() {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Manage Meals Button */}
+        {activeMealPlans.length > 0 && (
+          <TouchableOpacity
+            style={styles.manageMealsButton}
+            onPress={() => setManageMealsModalVisible(true)}
+          >
+            <Text style={styles.manageMealsText}>📋 Manage Meal Plans ({activeMealPlans.length})</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <ScrollView
@@ -200,63 +194,7 @@ export default function PantryScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {/* Active Meal Plans Section */}
-        {activeMealPlans.length > 0 && (
-          <View style={styles.mealPlansSection}>
-            <Text style={styles.sectionTitle}>Active Meal Plans</Text>
-            {activeMealPlans.map(plan => {
-              const status = getMealPlanStatus(plan);
-              const incompleteMeals = plan.mealSlots?.filter(slot => !slot.isCompleted && slot.recipe) || [];
-
-              return (
-                <View key={plan.id} style={styles.mealPlanCard}>
-                  <View style={styles.mealPlanHeader}>
-                    <View style={styles.mealPlanInfo}>
-                      <Text style={styles.mealPlanName}>{plan.name}</Text>
-                      <Text style={styles.mealPlanDate}>
-                        {new Date(plan.startDate).toLocaleDateString()} - {new Date(plan.endDate).toLocaleDateString()}
-                      </Text>
-                    </View>
-                    {status === 'ended' && incompleteMeals.length > 0 && (
-                      <View style={styles.endedBadge}>
-                        <Text style={styles.endedBadgeText}>Ended</Text>
-                      </View>
-                    )}
-                    {status === 'active' && (
-                      <View style={styles.activeBadge}>
-                        <Text style={styles.activeBadgeText}>Active</Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {incompleteMeals.length > 0 ? (
-                    <>
-                      <Text style={styles.mealPlanSummary}>
-                        {incompleteMeals.length} {incompleteMeals.length === 1 ? 'meal' : 'meals'} not yet marked as completed
-                      </Text>
-                      {status === 'ended' && (
-                        <View style={styles.completionBanner}>
-                          <Text style={styles.completionBannerText}>
-                            📋 Your meal plan ended. Mark completed meals to update your pantry.
-                          </Text>
-                        </View>
-                      )}
-                      <TouchableOpacity
-                        style={styles.markCompleteButton}
-                        onPress={() => handleOpenCompletionModal(plan)}
-                      >
-                        <Text style={styles.markCompleteButtonText}>Mark Meals as Completed</Text>
-                      </TouchableOpacity>
-                    </>
-                  ) : (
-                    <Text style={styles.allCompletedText}>✓ All meals completed</Text>
-                  )}
-                </View>
-              );
-            })}
-          </View>
-        )}
-
+        {/* Search Bar */}
         {inventory.length > 0 && (
           <View style={styles.searchContainer}>
             <TextInput
@@ -346,17 +284,12 @@ export default function PantryScreen() {
         onItemsAdded={handleItemsScanned}
       />
 
-      {selectedMealPlan && (
-        <MealCompletionModal
-          visible={completionModalVisible}
-          mealPlan={selectedMealPlan}
-          onClose={() => {
-            setCompletionModalVisible(false);
-            setSelectedMealPlan(null);
-          }}
-          onComplete={handleCompleteMeals}
-        />
-      )}
+      <ManageMealsModal
+        visible={manageMealsModalVisible}
+        onClose={() => setManageMealsModalVisible(false)}
+        activeMealPlans={activeMealPlans}
+        onMealsCompleted={handleMealsCompleted}
+      />
     </View>
   );
 }
@@ -420,6 +353,21 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.3)',
   },
   addButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  manageMealsButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+  },
+  manageMealsText: {
     color: 'white',
     fontSize: 14,
     fontWeight: '600',
@@ -541,10 +489,6 @@ const styles = StyleSheet.create({
     fontSize: 28,
     color: '#999',
     fontWeight: 'bold',
-  },
-  mealPlansSection: {
-    padding: 20,
-    paddingBottom: 10,
   },
   sectionTitle: {
     fontSize: 18,

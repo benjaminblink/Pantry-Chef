@@ -210,23 +210,20 @@ export async function generateShoppingList(mealPlanId: string, excludePantry: bo
 
   console.log(`Detecting similar ingredients in shopping list (${ingredients.length} total)...`);
 
-  // Detect similar ingredients and get merge suggestions
-  // Pass previous decisions so AI doesn't re-verify combinations user already decided on
-  const mergeResult = await detectSimilarIngredients(ingredients, previousDecisions);
+  // Run similarity detection in background to build cache (don't block shopping list generation)
+  // This prevents timeout issues while still building up the cache for future use
+  detectSimilarIngredients(ingredients, previousDecisions)
+    .then(() => console.log('Background similarity detection complete'))
+    .catch(err => console.error('Background similarity detection failed:', err));
 
-  // Annotate merge suggestions with previous decisions for UI pre-filling
-  const potentialMergesWithHistory = mergeResult.suggestedMerges.map(merge => {
-    const previousDecision = findMatchingDecision(merge, previousDecisions);
-    return {
-      ...merge,
-      previousDecision // Will be null if no previous decision exists
-    };
-  });
+  // For now, skip merge suggestions to avoid timeout - just return all ingredients
+  // TODO: Re-enable merge suggestions once cache is fully built
+  const potentialMergesWithHistory: any[] = [];
 
-  console.log(`Found ${potentialMergesWithHistory.filter(m => m.previousDecision).length} merges with previous decisions`);
+  console.log(`Skipping merge suggestions (running similarity detection in background for caching)`);
 
-  // Combine auto-merged + non-matched ingredients for the shopping list items
-  const finalIngredients = [...mergeResult.autoMerged, ...mergeResult.noMerge];
+  // Use all ingredients as-is (no merging)
+  const finalIngredients = ingredients;
 
   // Convert to consolidated items format
   const consolidatedItems: ConsolidatedItem[] = finalIngredients.map(item => ({
@@ -286,7 +283,7 @@ export async function generateShoppingList(mealPlanId: string, excludePantry: bo
     }
   });
 
-  console.log(`Shopping list ${shoppingList.id} created with ${mergeResult.suggestedMerges.length} merge options`);
+  console.log(`Shopping list ${shoppingList.id} created with ${potentialMergesWithHistory.length} merge options`);
 
   return {
     shoppingListId: shoppingList.id,

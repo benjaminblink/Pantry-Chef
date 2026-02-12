@@ -770,7 +770,25 @@ router.post('/:id/complete', authMiddleware, async (req: Request, res: Response)
       }
     });
 
-    // 4. Deduct ingredients from pantry
+    // 4. Create cooking events for each completed meal
+    const cookingEventsToCreate = mealSlots
+      .filter(slot => slot.recipe)
+      .map(slot => ({
+        userId,
+        recipeId: slot.recipeId!,
+        mealPlanId: id as string,
+        mealSlotId: slot.id,
+        cookedAt: new Date(),
+        pantryDeducted: true // Will be deducted in next step
+      }));
+
+    if (cookingEventsToCreate.length > 0) {
+      await prisma.cookingEvent.createMany({
+        data: cookingEventsToCreate
+      });
+    }
+
+    // 5. Deduct ingredients from pantry
     const recipes = mealSlots
       .filter(slot => slot.recipe)
       .map(slot => slot.recipe!);
@@ -779,7 +797,7 @@ router.post('/:id/complete', authMiddleware, async (req: Request, res: Response)
       ? await deductPantryIngredients(userId, recipes)
       : [];
 
-    // 5. Get updated meal plan
+    // 6. Get updated meal plan
     const updatedMealPlan = await prisma.mealPlan.findUnique({
       where: { id: id as string },
       include: {
@@ -813,6 +831,98 @@ router.post('/:id/complete', authMiddleware, async (req: Request, res: Response)
     res.status(500).json({
       success: false,
       message: 'Failed to complete meals',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// POST /api/meal-plans/:id/skip - Mark meals as skipped (didn't cook)
+const skipSlotsSchema = z.object({
+  slotIds: z.array(z.string())
+});
+
+router.post('/:id/skip', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const { id } = req.params;
+    const { slotIds } = skipSlotsSchema.parse(req.body);
+
+    // 1. Verify meal plan belongs to user
+    const mealPlan = await prisma.mealPlan.findFirst({
+      where: {
+        id: id as string,
+        userId
+      }
+    });
+
+    if (!mealPlan) {
+      return res.status(404).json({
+        success: false,
+        message: 'Meal plan not found'
+      });
+    }
+
+    // 2. Verify slots belong to this meal plan
+    const mealSlots = await prisma.mealSlot.findMany({
+      where: {
+        id: { in: slotIds },
+        mealPlanId: id as string
+      }
+    });
+
+    if (mealSlots.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No valid meal slots found'
+      });
+    }
+
+    // 3. Mark slots as skipped (preserves the meal plan for future reference)
+    await prisma.mealSlot.updateMany({
+      where: {
+        id: { in: slotIds },
+        mealPlanId: id as string
+      },
+      data: {
+        isSkipped: true,
+        skippedAt: new Date()
+      }
+    });
+
+    // 4. Get updated meal plan
+    const updatedMealPlan = await prisma.mealPlan.findUnique({
+      where: { id: id as string },
+      include: {
+        mealSlots: {
+          include: {
+            recipe: true
+          },
+          orderBy: {
+            date: 'asc'
+          }
+        }
+      }
+    });
+
+    res.json({
+      success: true,
+      mealPlan: updatedMealPlan,
+      skippedCount: mealSlots.length,
+      message: `Marked ${mealSlots.length} meal(s) as skipped`
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid input',
+        errors: error.errors
+      });
+    }
+
+    console.error('Error skipping meal slots:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to skip meal slots',
       error: error instanceof Error ? error.message : 'Unknown error'
     });
   }

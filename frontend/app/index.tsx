@@ -2,12 +2,14 @@ import { Text, View, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator
 import { Link, router, useFocusEffect } from "expo-router";
 import { useAuth } from "../contexts/AuthContext";
 import { useCredits } from "../contexts/CreditContext";
+import { useSubscription } from "../contexts/SubscriptionContext";
 import { useEffect, useCallback, useState } from "react";
 import ImportRecipeModal from "../src/components/ImportRecipeModal";
 
 export default function Index() {
   const { isAuthenticated, loading, user, logout } = useAuth();
   const { balance, refreshBalance } = useCredits();
+  const { isProUser } = useSubscription();
   const [importModalVisible, setImportModalVisible] = useState(false);
 
   useFocusEffect(
@@ -120,15 +122,21 @@ export default function Index() {
         <View style={styles.row}>
           <Link href="/pantry" asChild style={styles.halfButton}>
             <TouchableOpacity style={[styles.menuButton, styles.pantryButton]}>
-              <Text style={styles.menuIcon}>🥬</Text>
-              <Text style={styles.menuButtonText}>My Pantry</Text>
+              <View style={styles.buttonContent}>
+                <Text style={styles.menuIcon}>🥬</Text>
+                <Text style={styles.menuButtonText}>My Pantry</Text>
+                {!isProUser && <Text style={styles.proBadge}>PRO</Text>}
+              </View>
             </TouchableOpacity>
           </Link>
 
           <Link href="/quick-cook" asChild style={styles.halfButton}>
             <TouchableOpacity style={[styles.menuButton, styles.quickCookButton]}>
-              <Text style={styles.menuIcon}>👨‍🍳</Text>
-              <Text style={styles.menuButtonText}>Quick Cook</Text>
+              <View style={styles.buttonContent}>
+                <Text style={styles.menuIcon}>👨‍🍳</Text>
+                <Text style={styles.menuButtonText}>Quick Cook</Text>
+                {!isProUser && <Text style={styles.proBadge}>PRO</Text>}
+              </View>
             </TouchableOpacity>
           </Link>
         </View>
@@ -319,5 +327,22 @@ const styles = StyleSheet.create({
   menuButtonSubtext: {
     fontSize: 14,
     color: "#666",
+  },
+  buttonContent: {
+    position: "relative",
+    alignItems: "center",
+  },
+  proBadge: {
+    position: "absolute",
+    top: -8,
+    right: -8,
+    backgroundColor: "#FFD700",
+    color: "#000",
+    fontSize: 10,
+    fontWeight: "bold",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    overflow: "hidden",
   },
 });

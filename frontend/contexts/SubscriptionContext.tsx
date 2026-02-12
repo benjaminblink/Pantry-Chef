@@ -13,6 +13,7 @@ import {
   ENTITLEMENT_PRO,
   ENTITLEMENT_POWER,
 } from '../services/revenueCat';
+import { syncSubscriptionStatus } from '../src/api/credits';
 import { useAuth } from './AuthContext';
 
 interface SubscriptionStatus {
@@ -88,7 +89,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       // Note: RevenueCat doesn't have a removeListener method for customer info
       // The listener is automatically cleaned up when the component unmounts
     };
-  }, []);
+  }, [handleCustomerInfoUpdate]);
 
   // Sync user with RevenueCat when authenticated
   useEffect(() => {
@@ -207,13 +208,8 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     }
   };
 
-  const handleCustomerInfoUpdate = (info: CustomerInfo) => {
-    // Prevent processing if we're in the middle of a sync operation
-    // The sync operation will handle the update
-    if (syncingRef.current) {
-      console.log('SubscriptionContext: Sync in progress, deferring customer info update');
-      return;
-    }
+  const handleCustomerInfoUpdate = useCallback((info: CustomerInfo) => {
+    console.log('📥 handleCustomerInfoUpdate called');
 
     setCustomerInfo(info);
 
@@ -251,7 +247,26 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         expirationDate: null,
       });
     }
-  };
+
+    // Sync subscription status with backend (grants credits) - fire and forget
+    // This handles both test purchases AND provides instant feedback
+    // In production, webhooks also handle this but with a delay
+    console.log('🔍 Checking sync conditions:', { userId: user?.id, tier, hasTier: !!tier });
+    if (user?.id && tier) {
+      console.log('✅ Syncing subscription with backend...', { tier });
+      const entitlementIds = Object.keys(info.entitlements.active);
+      syncSubscriptionStatus(tier, entitlementIds)
+        .then(() => {
+          console.log('✅ Subscription synced with backend, credits granted');
+        })
+        .catch((error) => {
+          console.error('❌ Failed to sync subscription with backend:', error);
+          // Don't throw - frontend subscription state is still valid
+        });
+    } else {
+      console.log('⏭️ Skipping sync - no user or tier');
+    }
+  }, [user?.id]);
 
   const refreshSubscriptionStatus = async () => {
     try {

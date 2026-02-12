@@ -1,6 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/api';
+import { API_URL } from '../../config';
 
 async function getAuthHeaders(): Promise<HeadersInit> {
   const token = await AsyncStorage.getItem('authToken');
@@ -150,6 +149,35 @@ export async function completeMealPlan(
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.message || 'Failed to complete meals');
+  }
+
+  return response.json();
+}
+
+export interface SkipMealSlotsResponse {
+  success: boolean;
+  mealPlan: any;
+  skippedCount: number;
+  message: string;
+}
+
+export async function skipMealSlots(
+  mealPlanId: string,
+  slotIds: string[]
+): Promise<SkipMealSlotsResponse> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/meal-plans/${mealPlanId}/skip`, {
+    method: 'POST',
+    headers: {
+      ...headers,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ slotIds })
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.message || 'Failed to skip meals');
   }
 
   return response.json();

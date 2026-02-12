@@ -64,7 +64,87 @@ export interface MergeDetectionResult {
 
 
 /**
+ * Batch compare multiple ingredient pairs using a SINGLE AI request
+ * Much faster and cheaper than individual comparisons
+ */
+async function batchCompareIngredientsWithAI(
+  pairs: Array<{ ing1: CartItem; ing2: CartItem }>
+): Promise<Map<string, ComparisonResult>> {
+  if (pairs.length === 0) {
+    return new Map();
+  }
+
+  try {
+    const systemPrompt = 'You are an expert chef helping determine if ingredients should be merged in a shopping list. Return valid JSON only.';
+
+    const pairsList = pairs.map((p, idx) =>
+      `${idx + 1}. "${p.ing1.ingredientName}" (${p.ing1.unit}) vs "${p.ing2.ingredientName}" (${p.ing2.unit})`
+    ).join('\n');
+
+    const userPrompt = `Compare these ingredient pairs and determine if each pair should be merged in a shopping list:
+
+${pairsList}
+
+For EACH pair, determine:
+- "same": Essentially identical, just minor variation (e.g., "fresh salmon" vs "salmon"). Auto-merge.
+- "similar": Different form/variation that user might want to merge (e.g., "broccoli florets" vs "broccoli"). Ask user.
+- "different": Completely different items (e.g., "black pepper" vs "bell pepper"). Don't merge.
+
+If units differ and items can be merged, provide conversion info.
+
+Return JSON array with one object per pair:
+{
+  "comparisons": [
+    {"pairIndex": 1, "status": "same|similar|different", "canonicalUnit": "cup", "conversionRatio1": 0.25, "conversionRatio2": 1.0},
+    ...
+  ]
+}`;
+
+    console.log(`  Sending batch request for ${pairs.length} ingredient pairs...`);
+
+    const answer = await executeAIPrompt({
+      systemPrompt,
+      userPrompt,
+      maxTokens: 32000, // Increased to handle larger batch responses
+      jsonMode: true,
+    });
+
+    const parsed = JSON.parse(answer);
+    const results = new Map<string, ComparisonResult>();
+
+    for (const comp of parsed.comparisons) {
+      const pairIndex = comp.pairIndex - 1; // Convert to 0-based
+      if (pairIndex < 0 || pairIndex >= pairs.length) continue;
+
+      const { ing1, ing2 } = pairs[pairIndex];
+      const key = `${normalizeIngredientName(ing1.ingredientName)}|${normalizeIngredientName(ing2.ingredientName)}`;
+
+      results.set(key, {
+        status: comp.status as 'same' | 'similar' | 'different',
+        conversionRatio1: comp.conversionRatio1,
+        conversionRatio2: comp.conversionRatio2,
+        canonicalUnit: comp.canonicalUnit,
+      });
+
+      console.log(`  ${ing1.ingredientName} vs ${ing2.ingredientName} → ${comp.status.toUpperCase()}`);
+    }
+
+    console.log(`  Batch comparison complete: ${results.size}/${pairs.length} results`);
+    return results;
+  } catch (error) {
+    console.error('Batch AI comparison failed:', error);
+    if (error instanceof Error) {
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+    }
+    // Return empty map - calling code will handle fallback
+    return new Map();
+  }
+}
+
+/**
  * Compare two ingredients using AI (pairwise comparison)
+ * DEPRECATED - Use batchCompareIngredientsWithAI instead
  * Returns the comparison result with conversion ratios if units differ
  */
 async function compareTwoIngredientsWithAI(
@@ -161,6 +241,9 @@ export async function detectSimilarIngredients(
     const comparisons = await getAllComparisonsFor(ingredient.ingredientName);
     if (comparisons.size > 0) {
       console.log(`  "${ingredient.ingredientName}": found ${comparisons.size} cached comparison(s)`);
+      // DEBUG: Log first few cached comparisons
+      const entries = Array.from(comparisons.entries()).slice(0, 3);
+      console.log(`    Sample cached pairs: ${entries.map(([k, v]) => `"${k}" → ${v.status}`).join(', ')}`);
       ingredientComparisons.set(normalizeIngredientName(ingredient.ingredientName), comparisons);
     }
   }
@@ -222,53 +305,77 @@ export async function detectSimilarIngredients(
     }
   }
 
-  // Step 3: Run AI comparisons in batches for uncached pairs (max 5 concurrent)
+  // Step 3: Run AI comparison in batches (chunk into groups of 50 to avoid token limits)
   if (uncachedPairs.length > 0) {
-    console.log(`\n=== Running ${uncachedPairs.length} AI comparisons (batches of 5) ===`);
+    console.log(`\n=== Running batch AI comparison for ${uncachedPairs.length} ingredient pairs ===`);
 
-    const AI_CONCURRENCY = 5;
-    const aiResults: Array<{ ing1: CartItem; ing2: CartItem; comparison: ComparisonResult }> = [];
-
-    for (let i = 0; i < uncachedPairs.length; i += AI_CONCURRENCY) {
-      const batch = uncachedPairs.slice(i, i + AI_CONCURRENCY);
-      console.log(`  Batch ${Math.floor(i / AI_CONCURRENCY) + 1}: comparing ${batch.length} pairs...`);
-
-      const batchResults = await Promise.all(
-        batch.map(async ({ ing1, ing2 }) => {
-          const comparison = await compareTwoIngredientsWithAI(
-            ing1.ingredientName,
-            ing2.ingredientName,
-            ing1.unit,
-            ing2.unit
-          );
-
-          // Cache the result
-          await cacheComparison(ing1.ingredientName, ing2.ingredientName, comparison);
-
-          return { ing1, ing2, comparison };
-        })
-      );
-
-      aiResults.push(...batchResults);
+    const BATCH_SIZE = 25; // Process 25 pairs per AI request (conservative to avoid token limits)
+    const batches = [];
+    for (let i = 0; i < uncachedPairs.length; i += BATCH_SIZE) {
+      batches.push(uncachedPairs.slice(i, i + BATCH_SIZE));
     }
 
-    // Add AI results to match groups
-    for (const { ing1, ing2, comparison } of aiResults) {
-      if (comparison.status === 'same' || comparison.status === 'similar') {
+    console.log(`  Split into ${batches.length} batches of up to ${BATCH_SIZE} pairs each`);
+
+    let totalCached = 0;
+
+    // Process batches in parallel with concurrency limit (5 at a time)
+    const CONCURRENCY = 5;
+    const processBatch = async (batch: Array<{ ing1: CartItem; ing2: CartItem }>, batchNum: number) => {
+      console.log(`  Processing batch ${batchNum + 1}/${batches.length} (${batch.length} pairs)...`);
+
+      const batchResults = await batchCompareIngredientsWithAI(batch);
+      let batchCached = 0;
+
+      // Process results and cache them
+      for (const { ing1, ing2 } of batch) {
         const norm1 = normalizeIngredientName(ing1.ingredientName);
         const norm2 = normalizeIngredientName(ing2.ingredientName);
+        const key = `${norm1}|${norm2}`;
 
-        if (!matchGroups.has(norm1)) {
-          matchGroups.set(norm1, new Set([norm1]));
-        }
-        matchGroups.get(norm1)!.add(norm2);
+        const comparison = batchResults.get(key);
 
-        if (!matchGroups.has(norm2)) {
-          matchGroups.set(norm2, new Set([norm2]));
+        if (comparison) {
+          // Cache the successful result
+          try {
+            await cacheComparison(ing1.ingredientName, ing2.ingredientName, comparison);
+            batchCached++;
+          } catch (cacheError) {
+            console.error('Failed to cache comparison, continuing...', cacheError);
+          }
+
+          // Add to match groups if same/similar
+          if (comparison.status === 'same' || comparison.status === 'similar') {
+            if (!matchGroups.has(norm1)) {
+              matchGroups.set(norm1, new Set([norm1]));
+            }
+            matchGroups.get(norm1)!.add(norm2);
+
+            if (!matchGroups.has(norm2)) {
+              matchGroups.set(norm2, new Set([norm2]));
+            }
+            matchGroups.get(norm2)!.add(norm1);
+          }
+        } else {
+          // No result returned (batch comparison failed or incomplete)
+          // Treat as different for now, don't cache (will retry next time)
+          console.log(`  No result for "${ing1.ingredientName}" vs "${ing2.ingredientName}" - will retry next time`);
         }
-        matchGroups.get(norm2)!.add(norm1);
       }
+
+      console.log(`  Batch ${batchNum + 1} complete: ${batchResults.size}/${batch.length} comparisons cached`);
+      return batchCached;
+    };
+
+    // Process batches with concurrency limit
+    for (let i = 0; i < batches.length; i += CONCURRENCY) {
+      const batchChunk = batches.slice(i, i + CONCURRENCY);
+      const batchPromises = batchChunk.map((batch, idx) => processBatch(batch, i + idx));
+      const results = await Promise.all(batchPromises);
+      totalCached += results.reduce((sum, count) => sum + count, 0);
     }
+
+    console.log(`=== All batch comparisons complete: ${totalCached} total comparisons cached ===`);
   }
 
   // Step 4: Convert match groups to merge suggestions
