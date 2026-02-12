@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Environment variables
+# Note: Use .env in root directory, not here
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+dist/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+
+# Prisma
+prisma/migrations/

@@ -1,0 +1,870 @@
+// Prisma Schema for Pantry Chef App
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions", "driverAdapters"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  extensions = [vector]
+}
+
+model User {
+  id                String   @id @default(cuid())
+  email             String   @unique
+  password          String
+  name              String?
+  termsAcceptedAt   DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Credit system
+  credits                Int      @default(25) // Signup bonus
+  totalWalmartCheckouts  Int      @default(0)  // Track declining rewards
+  subscriptionTier       String?               // null (free), 'pro', or 'power'
+  isProUser              Boolean  @default(false) // true for Pro OR Power tier
+  isPowerUser            Boolean  @default(false) // true for Power tier only
+  proStatusLastChecked   DateTime?
+  revenueCatCustomerId   String?  @unique
+
+  preferences            UserPreferences?
+  recipesCreated         Recipe[]
+  recipeHistory          RecipeHistory[]
+  userPreferences        UserPreference[]
+  mealPlans              MealPlan[]
+  inventory              UserInventory[]
+  recipeStyles           UserRecipeStyle[]
+  conversationMessages   ConversationMessage[]
+  recipeCustomizations   UserRecipeCustomization[]
+  creditTransactions     CreditTransaction[]
+  recipeUsages           RecipeUsage[]
+  earningsAsCreator      CreatorEarning[]     @relation("creatorEarnings")
+  shoppingLists          ShoppingList[]
+}
+
+model UserPreferences {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dietaryRestrictions String[] @default([])
+  favoredCuisines     String[] @default([])
+  allergies           String[] @default([])
+  calorieTarget       Int?
+  proteinTarget       Int?
+  carbTarget          Int?
+  fatTarget           Int?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model Recipe {
+  id           String  @id @default(cuid())
+  title        String
+  description  String?
+  instructions Json // Array of step strings
+
+  // Cooking info
+  prepTime Int // in minutes
+  cookTime Int // in minutes
+  servings Int
+
+  // Nutrition (calculated from ingredients)
+  calories Int?
+  protein  Float? // grams
+  carbs    Float? // grams
+  fat      Float? // grams
+
+  // Ownership & visibility
+  createdById String? // null = AI-generated/global
+  createdBy   User?   @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  isPublic    Boolean @default(false)
+
+  // AI search
+  embedding Unsupported("vector(1536)")?
+
+  // Media
+  imageUrl String?
+
+  // Meal type classification
+  mealType String[] @default([]) // ["breakfast"], ["lunch", "dinner"], etc.
+
+  // Credit system
+  isAiGenerated Boolean @default(false) // AI recipes are free to use
+  usageCost     Int     @default(0)     // Credits per use (0 - recipe use is free for competition)
+
+  // URL Import tracking
+  isImported    Boolean  @default(false) // Imported from external URL
+  sourceUrl     String?                  // Original recipe URL
+  sourceWebsite String?                  // Domain name (e.g., "allrecipes.com")
+  importedAt    DateTime?                // When it was imported
+  canBePublic   Boolean  @default(true)  // False for imported recipes (copyright protection)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  recipeIngredients    RecipeIngredient[]
+  history              RecipeHistory[]
+  mealSlots            MealSlot[]
+  userCustomizations   UserRecipeCustomization[]
+  recipeUsages         RecipeUsage[]
+
+  @@index([createdById, isPublic])
+  @@index([title])
+  @@index([isAiGenerated])
+  @@index([sourceUrl])
+  @@index([isImported])
+}
+
+model RecipeHistory {
+  id         String   @id @default(cuid())
+  userId     String
+  recipeId   String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe     Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  viewedAt   DateTime @default(now())
+  rating     Int? // 1-5 stars
+  isFavorite Boolean  @default(false)
+
+  // Enhanced tracking
+  didCook        Boolean   @default(false)
+  cookedAt       DateTime?
+  wouldMakeAgain Boolean?
+  notes          String?
+
+  @@unique([userId, recipeId])
+  @@index([userId, viewedAt])
+  @@index([recipeId])
+  @@index([userId, didCook])
+  @@index([userId, isFavorite])
+}
+
+model Ingredient {
+  id       String  @id @default(cuid())
+  name     String  @unique // Generic ingredient name (e.g., "chicken breast")
+  category String? // "protein", "vegetable", "grain", "dairy", "spice", etc.
+
+  // Walmart linking (no pricing - just for reference)
+  walmartItemId      String? @unique // The specific Walmart product ID
+  walmartProductName String? // The specific Walmart product name (e.g., "Great Value Boneless Skinless Chicken Breast, 2.4-3.0 lb")
+  walmartSearchTerm  String? // Used to find item on Walmart (deprecated - use name field)
+
+  // Nutrition per 100g (standardized)
+  caloriesPer100g Float?
+  proteinPer100g  Float?
+  carbsPer100g    Float?
+  fatPer100g      Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  recipeIngredients          RecipeIngredient[]
+  userInventory              UserInventory[]
+  shoppingListItems          ShoppingListItem[]
+  unitConversions            UnitConversion[]
+  packagingInfo              PackagingInfo[]
+  substitutionsAsPrimary     IngredientSubstitution[] @relation("primaryIngredient")
+  substitutionsAsSubstitute  IngredientSubstitution[] @relation("substituteIngredient")
+  qualityTiers               IngredientQualityTier[]  @relation("qualityTiers")
+  groupMembership            IngredientGroupMember?
+
+  @@index([name])
+  @@index([category])
+}
+
+model RecipeIngredient {
+  id String @id @default(cuid())
+
+  recipeId String
+  recipe   Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  ingredientId String
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  // Quantity for THIS recipe
+  amount Float // 2, 0.5, 1
+  unit   String // "cups", "lbs", "tbsp", "whole", "oz"
+  notes  String? // "diced", "boneless", "extra virgin", "chopped"
+
+  // Order in recipe (for display)
+  sortOrder Int @default(0)
+
+  @@unique([recipeId, ingredientId])
+  @@index([recipeId])
+  @@index([ingredientId])
+}
+
+model TextEntry {
+  id        String   @id @default(cuid())
+  text      String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// User's configurable preferences for meal planning
+model UserPreference {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Preference identity
+  key      String // "dietary_vegetarian", "budget_weekly"
+  label    String // "Vegetarian", "Weekly Budget"
+  category String // "dietary", "budget", "nutrition", "cuisine", "lifestyle", "restrictions"
+
+  // Current value (flexible JSON for any type)
+  value Json // boolean, number, string, array
+
+  // UI control metadata
+  controlType   String // "checkbox", "slider", "input", "multiselect", "select", "tag-input"
+  controlConfig Json? // { min, max, step, unit, options } for specific controls
+
+  // Ordering and visibility
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+  isPinned  Boolean @default(false)
+
+  // Usage tracking
+  timesUsed Int      @default(1)
+  lastUsed  DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, key])
+  @@index([userId, category, sortOrder])
+  @@index([userId, isActive])
+}
+
+// Meal plan for a week
+model MealPlan {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name      String // "Week of Dec 4-10"
+  startDate DateTime
+  endDate   DateTime
+
+  // Configuration
+  mealsPerDay         Int      @default(3)
+  calorieTargetPerDay Int?
+  budgetLimit         Float?
+  dietaryRestrictions String[]
+  cuisinePreferences  String[]
+
+  // Generation parameters
+  existingRecipeCount Int     @default(0)
+  newRecipeCount      Int     @default(0)
+  usedInventory       Boolean @default(false)
+  generationParams    Json? // Store full generation config
+
+  // Status
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  mealSlots     MealSlot[]
+  shoppingLists ShoppingList[]
+
+  @@index([userId, startDate])
+  @@index([userId, isActive])
+}
+
+// Individual meal slot in a meal plan
+model MealSlot {
+  id         String   @id @default(cuid())
+  mealPlanId String
+  mealPlan   MealPlan @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)
+
+  recipeId String?
+  recipe   Recipe? @relation(fields: [recipeId], references: [id], onDelete: SetNull)
+
+  // Slot details
+  dayOfWeek Int // 0-6 (Sunday-Saturday)
+  mealType  String // "breakfast", "lunch", "dinner", "snack"
+  date      DateTime
+  sortOrder Int      @default(0)
+
+  // Completion tracking
+  isCompleted Boolean   @default(false)
+  completedAt DateTime?
+
+  // Optional notes
+  notes String?
+
+  @@unique([mealPlanId, dayOfWeek, mealType])
+  @@index([mealPlanId, date])
+}
+
+// Unified shopping list / cart — used by both meal plan and recipe selection flows
+model ShoppingList {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mealPlanId String?
+  mealPlan   MealPlan? @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)
+
+  isActive           Boolean  @default(true)  // At most one active per user
+  source             String   @default("meal_plan") // "meal_plan" | "recipe_selection"
+  generatedAt        DateTime @default(now())
+  totalEstimatedCost Float?
+
+  items        ShoppingListItem[]
+  mergeOptions ShoppingListMergeOption[]
+
+  @@index([mealPlanId])
+  @@index([userId, isActive])
+}
+
+// Individual item in shopping list
+model ShoppingListItem {
+  id             String       @id @default(cuid())
+  shoppingListId String
+  shoppingList   ShoppingList @relation(fields: [shoppingListId], references: [id], onDelete: Cascade)
+
+  ingredientId String
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id])
+
+  // Consolidated quantity across all recipes
+  totalAmount String
+  unit        String
+
+  // Walmart integration
+  walmartItemId  String?
+  estimatedPrice Float?
+
+  isPurchased Boolean @default(false)
+
+  @@index([shoppingListId])
+}
+
+// User's current ingredient inventory
+model UserInventory {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  ingredientId String
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id])
+
+  // Quantity tracking
+  amount         String // "2 lbs", "1 bag", "plenty"
+  unit           String?
+  estimatedGrams Float?
+
+  // Status
+  isAvailable Boolean   @default(true)
+  expiresAt   DateTime?
+
+  // Tracking
+  addedAt   DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, ingredientId])
+  @@index([userId, isAvailable])
+}
+
+// Recipe style definitions
+model RecipeStyle {
+  id String @id @default(cuid())
+
+  // Style characteristics
+  name        String  @unique // "quick-weeknight", "one-pot", "mediterranean"
+  description String?
+  category    String // "cooking_method", "cuisine", "timing", "complexity"
+
+  // Pattern matching
+  keywords String[] // ["quick", "easy", "30 minutes"]
+
+  createdAt DateTime @default(now())
+
+  // Relations
+  userStyles UserRecipeStyle[]
+}
+
+// User's learned recipe style preferences
+model UserRecipeStyle {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  styleId String
+  style   RecipeStyle @relation(fields: [styleId], references: [id])
+
+  // How much user likes this style
+  affinity Float @default(0.5) // 0.0 = dislike, 1.0 = love
+
+  // Based on user behavior
+  recipesCooked Int    @default(0)
+  avgRating     Float?
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, styleId])
+  @@index([userId, affinity])
+  @@index([userId, isActive])
+}
+
+// Conversation messages for chat history
+model ConversationMessage {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  role    String // "user" | "assistant" | "system"
+  content String @db.Text
+
+  // Track which preferences were extracted from this message
+  extractedPreferences Json? // Array of preference keys
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// Stores merge options for a shopping list
+model ShoppingListMergeOption {
+  id             String       @id @default(cuid())
+  shoppingListId String
+  shoppingList   ShoppingList @relation(fields: [shoppingListId], references: [id], onDelete: Cascade)
+
+  mergeId String // "merge-1", "merge-2", etc.
+
+  // Ingredients that can be merged
+  ingredientIds String[]
+
+  // Unit conversion (canonical unit + ratios for each ingredient)
+  canonicalUnit    String // "cup"
+  conversionRatios Float[] // [0.25, 1.0, 0.0625] parallel to ingredientIds
+
+  // User's decision
+  userDecision String? // "merge", "keep_separate", null = pending
+
+  @@unique([shoppingListId, mergeId])
+  @@index([shoppingListId])
+}
+
+// ============================================
+// UNIVERSAL UNIT CONVERSION SYSTEM
+// Used throughout the app for any unit conversions
+// ============================================
+
+// Core unit definitions (volume, weight, count, etc.)
+model Unit {
+  id String @id @default(cuid())
+
+  name         String @unique // "ounce", "cup", "gram", "liter", etc.
+  abbreviation String @unique // "oz", "cup", "g", "L", etc.
+  type         String         // "weight", "volume", "count", "temperature", etc.
+  system       String         // "metric", "imperial", "count"
+
+  // Display
+  pluralName String // "ounces", "cups", "grams", etc.
+
+  // Metadata
+  isCommon   Boolean @default(true) // Show in UI dropdowns
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relations
+  conversionsFrom UnitConversion[] @relation("fromUnit")
+  conversionsTo   UnitConversion[] @relation("toUnit")
+
+  @@index([type])
+  @@index([system])
+}
+
+// Conversion rules between units
+// Examples: 1 cup = 8 fl oz, 1 lb = 16 oz, 1 kg = 1000 g
+model UnitConversion {
+  id String @id @default(cuid())
+
+  // From unit
+  fromUnitId String
+  fromUnit   Unit   @relation("fromUnit", fields: [fromUnitId], references: [id], onDelete: Cascade)
+  fromAmount Float  @default(1.0) // Usually 1, but could be different (e.g., 1 tbsp = 3 tsp)
+
+  // To unit
+  toUnitId String
+  toUnit   Unit   @relation("toUnit", fields: [toUnitId], references: [id], onDelete: Cascade)
+  toAmount Float  // The equivalent amount (e.g., 1 cup = 8 fl oz, so toAmount = 8)
+
+  // Optional: ingredient-specific conversions
+  // Example: "1 cup flour" weighs differently than "1 cup water"
+  ingredientId String?
+  ingredient   Ingredient? @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  // Metadata
+  isApproximate Boolean  @default(false) // True for ingredient-specific or approximate conversions
+  notes         String?  // Explanation (e.g., "for all-purpose flour, packed")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([fromUnitId, toUnitId, ingredientId]) // Unique conversion per ingredient
+  @@index([fromUnitId])
+  @@index([toUnitId])
+  @@index([ingredientId])
+}
+
+// Standard package sizes for products
+// This helps convert recipe amounts to purchase counts
+model PackagingInfo {
+  id String @id @default(cuid())
+
+  // Product identifier
+  ingredientId String?
+  ingredient   Ingredient? @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  // Product description
+  productName String // "Fresh Atlantic Salmon Fillets", "Great Value Quinoa", etc.
+  category    String // "Seafood", "Grains", "Dairy", etc.
+
+  // Package details
+  packageSize       Float  // Numeric size: 16, 1.0, 2, etc.
+  packageUnit       String // "oz", "lb", "count", "fl oz", etc.
+
+  // Range support (for variable weights like "0.95-1.05 lb")
+  packageSizeMin    Float?
+  packageSizeMax    Float?
+
+  // Count information
+  itemsPerPackage   Int?   @default(1) // How many items in this package (2 fillets, 12 eggs, etc.)
+  packageMultiplier Int?   @default(1) // Some products sold in multi-packs (e.g., 6-pack of cans)
+
+  // Source
+  source            String // "walmart", "manual", "usda", etc.
+  sourceId          String? // Walmart itemId, USDA database ID, etc.
+
+  // Verification
+  isVerified        Boolean  @default(false)
+  verifiedBy        String?
+  verifiedAt        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ingredientId])
+  @@index([category])
+  @@index([source, sourceId])
+}
+
+// ============================================
+// INGREDIENT SUBSTITUTION & QUALITY TIER SYSTEM
+// ============================================
+
+// Stores substitution rules between ingredients
+// Example: Thai basil → Basil, Shallots → Red onion
+model IngredientSubstitution {
+  id String @id @default(cuid())
+
+  // Primary ingredient (the exotic/specialized one)
+  primaryIngredientId String
+  primaryIngredient   Ingredient @relation("primaryIngredient", fields: [primaryIngredientId], references: [id], onDelete: Cascade)
+
+  // Substitute ingredient (the common/alternative one)
+  substituteIngredientId String
+  substituteIngredient   Ingredient @relation("substituteIngredient", fields: [substituteIngredientId], references: [id], onDelete: Cascade)
+
+  // Substitution metadata
+  substitutionType String // "exotic_to_common", "allergy", "dietary", "cost", "availability"
+  qualityImpact    String // "none", "slight", "moderate", "significant" - how much flavor/quality changes
+  conversionRatio  Float  @default(1.0) // Amount adjustment: 1 cup thai basil = 1.2 cups regular basil
+
+  // Context
+  notes          String? // "Use 20% more regular basil to compensate for milder flavor"
+  cuisineContext String? // "thai", "italian", null (works in any cuisine)
+
+  // Ranking
+  popularity Int     @default(0) // How often this substitution is used
+  isVerified Boolean @default(false)
+  verifiedBy String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([primaryIngredientId, substituteIngredientId, substitutionType])
+  @@index([primaryIngredientId])
+  @@index([substituteIngredientId])
+  @@index([substitutionType])
+}
+
+// Defines quality/cost tiers for ingredients
+// Example: Chicken breast has budget (Great Value), standard (Tyson), organic (Organic Marketside) tiers
+model IngredientQualityTier {
+  id String @id @default(cuid())
+
+  ingredientId String
+  ingredient   Ingredient @relation("qualityTiers", fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  // Tier definition
+  tier      String // "budget", "standard", "premium", "organic"
+  tierLevel Int    // 1 (budget) to 4 (organic) for sorting
+
+  // Tier characteristics
+  priceMultiplier Float @default(1.0) // Relative to standard: budget=0.7, organic=1.5
+  qualityScore    Int   @default(50) // 0-100: nutrition density, freshness, sourcing
+
+  // Walmart product mapping
+  walmartItemId    String? @unique
+  walmartBrandName String? // "Great Value", "Organic Marketside", "Choice", etc.
+
+  // Metadata
+  certifications String[] // ["USDA Organic", "Non-GMO", "Fair Trade"]
+  description    String? // "Budget-friendly option", "Certified organic"
+
+  isAvailable Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([ingredientId, tier])
+  @@index([ingredientId])
+  @@index([tier])
+}
+
+// Groups similar ingredients together (e.g., "butter", "unsalted butter", "salted butter")
+// Allows substitutions and quality tiers to apply to entire groups
+model IngredientGroup {
+  id String @id @default(cuid())
+
+  // The canonical/primary ingredient name for this group
+  canonicalName String  @unique // e.g., "butter"
+  category      String? // e.g., "dairy"
+
+  // All ingredient variations in this group
+  members IngredientGroupMember[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([canonicalName])
+}
+
+model IngredientGroupMember {
+  id String @id @default(cuid())
+
+  groupId String
+  group   IngredientGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  ingredientId String     @unique
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  // Optional: similarity score if algorithmically matched
+  similarityScore Float? // 0.0 to 1.0
+
+  createdAt DateTime @default(now())
+
+  @@index([groupId])
+  @@index([ingredientId])
+}
+
+// Tracks user-specific recipe customizations (ingredient substitutions, quality tier selections)
+// Only saved when user modifies recipe on recipe detail page, NOT in shopping cart
+model UserRecipeCustomization {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  recipeId String
+  recipe   Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  // Track ingredient substitutions made by user
+  // Structure: [{ originalIngredientId, substituteIngredientId, reason }]
+  substitutions Json @default("[]")
+
+  // Track quality tier selections per ingredient
+  // Structure: { ingredientId: tier }
+  qualitySelections Json @default("{}")
+
+  // Metadata
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, recipeId])
+  @@index([userId])
+  @@index([recipeId])
+}
+
+// ============================================
+// INGREDIENT COMPARISON CACHE
+// Stores AI-determined pairwise ingredient comparisons
+// Reduces AI costs by caching comparison results
+// ============================================
+
+model IngredientComparison {
+  id String @id @default(cuid())
+
+  // Normalized ingredient names (lowercase, trimmed)
+  // Always stored alphabetically: ingredient1 < ingredient2
+  ingredient1 String
+  ingredient2 String
+
+  // AI classification result (pairwise comparison)
+  status String // "same" | "similar" | "different"
+
+  // Unit conversion information (if applicable)
+  conversionRatio1 Float? // conversion ratio for ingredient1 to canonicalUnit
+  conversionRatio2 Float? // conversion ratio for ingredient2 to canonicalUnit
+  canonicalUnit    String? // canonical unit if conversion needed (e.g., "cup", "oz")
+
+  // Metadata
+  createdAt DateTime @default(now())
+
+  @@unique([ingredient1, ingredient2]) // Ensure no duplicates
+  @@index([ingredient1])
+  @@index([ingredient2])
+}
+
+// ============================================
+// CREDIT SYSTEM
+// Monetization via credits, subscriptions, and creator payouts
+// ============================================
+
+// Tracks all credit transactions (earned and spent)
+model CreditTransaction {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Transaction details
+  amount      Int                     // Positive = earned, negative = spent
+  type        CreditTransactionType
+  description String?
+
+  // Context metadata (flexible JSON for different transaction types)
+  // Examples:
+  // - Walmart checkout: { checkoutNumber: 3, creditsGranted: 5 }
+  // - Recipe use: { recipeId: "abc", recipeName: "Pasta Carbonara" }
+  // - Subscription: { tier: "pro", period: "monthly" }
+  metadata Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([userId, type])
+  @@index([type])
+}
+
+enum CreditTransactionType {
+  SIGNUP_BONUS       // 25 credits on account creation
+  WALMART_CHECKOUT   // Declining credits from Walmart checkout (15→10→5)
+  SUBSCRIPTION_GRANT // Monthly credit grant from subscription
+  CREDIT_PURCHASE    // One-time credit purchase via RevenueCat
+  RECIPE_USE         // Community recipe usage (dormant - not charged for competition)
+  AI_MEAL_PLAN       // AI meal plan generation (-1 credit)
+  AI_RECIPE          // AI recipe generation (-1 credit)
+  AI_RECEIPT_SCAN    // Receipt scanning with AI vision (-1 credit)
+  CHAT_SESSION       // Chat session (-1 credit)
+  URL_IMPORT         // URL import (-1 credit)
+  ADMIN_ADJUSTMENT   // Manual adjustment by admin
+}
+
+// Tracks every community recipe usage for creator payouts
+model RecipeUsage {
+  id       String @id @default(cuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipeId String
+  recipe   Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  // Credit details
+  creditCost          Int     @default(2) // How many credits this use cost
+  creatorEarningAmount Decimal @db.Decimal(10, 4) // $0.05 (free) or $0.20 (pro)
+
+  // Payment tracking
+  isPaid             Boolean   @default(false) // Has creator been paid for this use?
+  paidAt             DateTime?
+  requiresWalmart    Boolean   @default(true)  // Does this require Walmart checkout to trigger payment?
+  walmartCheckoutAt  DateTime? // When user completed Walmart checkout
+
+  createdAt DateTime @default(now())
+
+  // Relations
+  creatorEarning CreatorEarning?
+
+  @@index([userId, createdAt])
+  @@index([recipeId, createdAt])
+  @@index([isPaid])
+  @@index([walmartCheckoutAt])
+}
+
+// Tracks creator earnings for payouts
+model CreatorEarning {
+  id            String      @id @default(cuid())
+  creatorId     String
+  creator       User        @relation("creatorEarnings", fields: [creatorId], references: [id], onDelete: Cascade)
+  recipeUsageId String      @unique
+  recipeUsage   RecipeUsage @relation(fields: [recipeUsageId], references: [id], onDelete: Cascade)
+
+  // Earning details
+  amount Decimal @db.Decimal(10, 4) // $0.05 or $0.20
+
+  // Payout tracking
+  isPaid  Boolean   @default(false)
+  paidAt  DateTime?
+  batchId String? // For monthly batch payouts
+
+  createdAt DateTime @default(now())
+
+  @@index([creatorId, isPaid])
+  @@index([creatorId, createdAt])
+  @@index([batchId])
+  @@index([isPaid, createdAt])
+}
+
+// ============================================
+// URL IMPORT SYSTEM
+// Caching to minimize AI costs and improve performance
+// ============================================
+
+// Caches URL extraction results to avoid re-scraping same URLs
+model UrlRecipeCache {
+  id          String   @id @default(cuid())
+  url         String   @unique
+
+  // Extracted data (JSON)
+  rawData     Json     // Original structured data or cleaned HTML
+  parsedData  Json     // AI-cleaned recipe data
+
+  // Extraction metadata
+  extractionMethod String  // "json-ld", "microdata", "ai-full", "ai-partial"
+  wasSuccessful    Boolean
+  errorMessage     String?
+
+  // Usage tracking
+  timesUsed  Int      @default(1)
+  lastUsedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  @@index([url])
+  @@index([wasSuccessful])
+  @@index([lastUsedAt])
+}
+
+// Caches unit conversions discovered by AI
+// Helps normalize variant unit names to standard units
+model UnitAlias {
+  id              String   @id @default(cuid())
+
+  // Variant unit names
+  variantName     String   @unique  // "T", "Tbsp", "tablespoon", "TBSP", "tb"
+  standardUnit    String             // "tbsp"
+
+  // Conversion info
+  conversionFactor Float   @default(1.0)  // Usually 1.0 for aliases, different for conversions
+
+  // AI confidence (if discovered by AI)
+  isVerified      Boolean  @default(false)
+  confidence      Float?   // 0.0-1.0 if AI-generated
+
+  createdAt       DateTime @default(now())
+
+  @@index([variantName])
+  @@index([standardUnit])
+}

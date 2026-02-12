@@ -1,0 +1,349 @@
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import Purchases, { CustomerInfo, PurchasesOffering } from 'react-native-purchases';
+import {
+  initializeRevenueCat,
+  loginRevenueCatUser,
+  logoutRevenueCatUser,
+  checkProAccess,
+  getCustomerInfo,
+  getOfferings,
+  purchasePackage,
+  restorePurchases,
+  getSubscriptionStatus,
+  ENTITLEMENT_PRO,
+  ENTITLEMENT_POWER,
+} from '../services/revenueCat';
+import { useAuth } from './AuthContext';
+
+interface SubscriptionStatus {
+  isActive: boolean;
+  tier: 'pro' | 'power' | null;
+  productId: string | null;
+  willRenew: boolean;
+  expirationDate: string | null;
+  periodType?: string;
+  store?: string;
+}
+
+interface SubscriptionContextType {
+  // State
+  isProUser: boolean;
+  isPowerUser: boolean;
+  subscriptionTier: 'pro' | 'power' | null;
+  customerInfo: CustomerInfo | null;
+  currentOffering: PurchasesOffering | null;
+  subscriptionStatus: SubscriptionStatus;
+  loading: boolean;
+  error: string | null;
+
+  // Actions
+  refreshSubscriptionStatus: () => Promise<void>;
+  handlePurchase: (packageToPurchase: any) => Promise<boolean>;
+  handleRestorePurchases: () => Promise<boolean>;
+  showPaywall: () => void;
+  showCustomerCenter: () => void;
+}
+
+const SubscriptionContext = createContext<SubscriptionContextType | undefined>(undefined);
+
+export function SubscriptionProvider({ children }: { children: React.ReactNode }) {
+  const { user, isAuthenticated } = useAuth();
+
+  // State
+  const [isProUser, setIsProUser] = useState(false);
+  const [isPowerUser, setIsPowerUser] = useState(false);
+  const [subscriptionTier, setSubscriptionTier] = useState<'pro' | 'power' | null>(null);
+  const [customerInfo, setCustomerInfo] = useState<CustomerInfo | null>(null);
+  const [currentOffering, setCurrentOffering] = useState<PurchasesOffering | null>(null);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus>({
+    isActive: false,
+    tier: null,
+    productId: null,
+    willRenew: false,
+    expirationDate: null,
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Refs to prevent concurrent RevenueCat API calls
+  const syncingRef = useRef(false);
+  const loadingCustomerInfoRef = useRef(false);
+  const initializingRef = useRef(false);
+
+  // Initialize RevenueCat on mount
+  useEffect(() => {
+    initRevenueCat();
+  }, []);
+
+  // Setup customer info listener
+  useEffect(() => {
+    const customerInfoUpdateListener = (info: CustomerInfo) => {
+      console.log('SubscriptionContext: Customer info updated');
+      handleCustomerInfoUpdate(info);
+    };
+
+    Purchases.addCustomerInfoUpdateListener(customerInfoUpdateListener);
+
+    return () => {
+      // Note: RevenueCat doesn't have a removeListener method for customer info
+      // The listener is automatically cleaned up when the component unmounts
+    };
+  }, []);
+
+  // Sync user with RevenueCat when authenticated
+  useEffect(() => {
+    if (isAuthenticated && user?.id) {
+      syncUserWithRevenueCat(user.id);
+    } else if (!isAuthenticated) {
+      logoutFromRevenueCat();
+    }
+  }, [isAuthenticated, user?.id]);
+
+  const initRevenueCat = async () => {
+    // Prevent concurrent initialization
+    if (initializingRef.current) {
+      console.log('SubscriptionContext: Init already in progress, skipping');
+      return;
+    }
+
+    initializingRef.current = true;
+    try {
+      setLoading(true);
+      await initializeRevenueCat();
+
+      // Load initial data sequentially to avoid concurrent API calls
+      await loadCustomerInfo();
+      await loadOfferings();
+    } catch (err: any) {
+      console.error('SubscriptionContext: Failed to initialize RevenueCat:', err);
+      setError(err.message || 'Failed to initialize subscriptions');
+    } finally {
+      setLoading(false);
+      initializingRef.current = false;
+    }
+  };
+
+  const syncUserWithRevenueCat = async (userId: string) => {
+    // Prevent concurrent calls to avoid RevenueCat 429 errors
+    if (syncingRef.current) {
+      console.log('SubscriptionContext: Sync already in progress, skipping');
+      return;
+    }
+
+    syncingRef.current = true;
+    try {
+      // loginRevenueCatUser returns customerInfo and triggers the update listener
+      // So we DON'T call loadCustomerInfo() after it - it will be called by the listener
+      await loginRevenueCatUser(userId);
+      // Wait a brief moment for the listener to process
+      await new Promise(resolve => setTimeout(resolve, 100));
+    } catch (err: any) {
+      console.error('SubscriptionContext: Failed to sync user with RevenueCat:', err);
+      setError(err.message || 'Failed to sync user');
+    } finally {
+      syncingRef.current = false;
+    }
+  };
+
+  const logoutFromRevenueCat = async () => {
+    // Prevent concurrent calls during logout
+    if (syncingRef.current) {
+      console.log('SubscriptionContext: Sync in progress, skipping logout');
+      return;
+    }
+
+    syncingRef.current = true;
+    try {
+      // logoutRevenueCatUser calls Purchases.logOut() which triggers the update listener
+      // So we DON'T manually update state - the listener will handle it
+      await logoutRevenueCatUser();
+      // Wait a brief moment for the listener to process
+      await new Promise(resolve => setTimeout(resolve, 100));
+    } catch (err: any) {
+      console.error('SubscriptionContext: Failed to logout from RevenueCat:', err);
+      // On error, manually reset state
+      setIsProUser(false);
+      setIsPowerUser(false);
+      setSubscriptionTier(null);
+      setCustomerInfo(null);
+      setSubscriptionStatus({
+        isActive: false,
+        tier: null,
+        productId: null,
+        willRenew: false,
+        expirationDate: null,
+      });
+    } finally {
+      syncingRef.current = false;
+    }
+  };
+
+  const loadCustomerInfo = async () => {
+    // Prevent concurrent customer info calls
+    if (loadingCustomerInfoRef.current) {
+      console.log('SubscriptionContext: Customer info load already in progress, skipping');
+      return;
+    }
+
+    loadingCustomerInfoRef.current = true;
+    try {
+      const info = await getCustomerInfo();
+      handleCustomerInfoUpdate(info);
+    } catch (err: any) {
+      console.error('SubscriptionContext: Failed to load customer info:', err);
+      setError(err.message || 'Failed to load customer info');
+    } finally {
+      loadingCustomerInfoRef.current = false;
+    }
+  };
+
+  const loadOfferings = async () => {
+    try {
+      const offering = await getOfferings();
+      setCurrentOffering(offering);
+    } catch (err: any) {
+      console.error('SubscriptionContext: Failed to load offerings:', err);
+      setError(err.message || 'Failed to load offerings');
+    }
+  };
+
+  const handleCustomerInfoUpdate = (info: CustomerInfo) => {
+    // Prevent processing if we're in the middle of a sync operation
+    // The sync operation will handle the update
+    if (syncingRef.current) {
+      console.log('SubscriptionContext: Sync in progress, deferring customer info update');
+      return;
+    }
+
+    setCustomerInfo(info);
+
+    // Check entitlements - Power users have BOTH entitlements
+    const hasProAccess = typeof info.entitlements.active[ENTITLEMENT_PRO] !== 'undefined';
+    const hasPowerAccess = typeof info.entitlements.active[ENTITLEMENT_POWER] !== 'undefined';
+
+    setIsProUser(hasProAccess); // true for Pro OR Power
+    setIsPowerUser(hasPowerAccess);
+
+    const tier: 'power' | 'pro' | null = hasPowerAccess ? 'power' : hasProAccess ? 'pro' : null;
+    setSubscriptionTier(tier);
+
+    // Update subscription status using the highest-tier entitlement
+    const activeEntitlement = hasPowerAccess
+      ? info.entitlements.active[ENTITLEMENT_POWER]
+      : info.entitlements.active[ENTITLEMENT_PRO];
+
+    if (activeEntitlement) {
+      setSubscriptionStatus({
+        isActive: true,
+        tier,
+        productId: activeEntitlement.productIdentifier,
+        willRenew: activeEntitlement.willRenew,
+        expirationDate: activeEntitlement.expirationDate,
+        periodType: activeEntitlement.periodType,
+        store: activeEntitlement.store,
+      });
+    } else {
+      setSubscriptionStatus({
+        isActive: false,
+        tier: null,
+        productId: null,
+        willRenew: false,
+        expirationDate: null,
+      });
+    }
+  };
+
+  const refreshSubscriptionStatus = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      // Load sequentially to avoid concurrent API calls
+      await loadCustomerInfo();
+      await loadOfferings();
+    } catch (err: any) {
+      console.error('SubscriptionContext: Failed to refresh subscription status:', err);
+      setError(err.message || 'Failed to refresh subscription status');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePurchase = async (packageToPurchase: any): Promise<boolean> => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const { customerInfo: updatedInfo } = await purchasePackage(packageToPurchase);
+      handleCustomerInfoUpdate(updatedInfo);
+
+      return true;
+    } catch (err: any) {
+      if (!err.userCancelled) {
+        console.error('SubscriptionContext: Purchase failed:', err);
+        setError(err.message || 'Purchase failed');
+      }
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRestorePurchases = async (): Promise<boolean> => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const restoredInfo = await restorePurchases();
+      handleCustomerInfoUpdate(restoredInfo);
+
+      return true;
+    } catch (err: any) {
+      console.error('SubscriptionContext: Restore purchases failed:', err);
+      setError(err.message || 'Failed to restore purchases');
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Placeholder functions - these will trigger navigation to paywall/customer center screens
+  const showPaywall = () => {
+    console.log('SubscriptionContext: Show paywall requested');
+    // Navigation will be handled in the app routes
+  };
+
+  const showCustomerCenter = () => {
+    console.log('SubscriptionContext: Show customer center requested');
+    // Navigation will be handled in the app routes
+  };
+
+  const value: SubscriptionContextType = {
+    isProUser,
+    isPowerUser,
+    subscriptionTier,
+    customerInfo,
+    currentOffering,
+    subscriptionStatus,
+    loading,
+    error,
+    refreshSubscriptionStatus,
+    handlePurchase,
+    handleRestorePurchases,
+    showPaywall,
+    showCustomerCenter,
+  };
+
+  return (
+    <SubscriptionContext.Provider value={value}>
+      {children}
+    </SubscriptionContext.Provider>
+  );
+}
+
+export function useSubscription() {
+  const context = useContext(SubscriptionContext);
+  if (context === undefined) {
+    throw new Error('useSubscription must be used within a SubscriptionProvider');
+  }
+  return context;
+}

@@ -1,0 +1,58 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: pantry-chef-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pantrychef
+      POSTGRES_PASSWORD: pantrychef_dev_password
+      POSTGRES_DB: pantrychef
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U pantrychef']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - pantry-chef-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pantry-chef-backend
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: ${PORT:-3000}
+      HOST_IP: ${HOST_IP:-localhost}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://pantrychef:pantrychef_dev_password@postgres:5432/pantrychef}
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      WALMART_CONSUMER_ID: ${WALMART_CONSUMER_ID}
+      WALMART_PRIVATE_KEY: ${WALMART_PRIVATE_KEY}
+      WALMART_KEY_VERSION: ${WALMART_KEY_VERSION:-1}
+      WALMART_PUBLISHER_ID: ${WALMART_PUBLISHER_ID}
+    volumes:
+      - ./backend/src:/app/src
+      - ./backend/prisma:/app/prisma
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - pantry-chef-network
+
+networks:
+  pantry-chef-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
