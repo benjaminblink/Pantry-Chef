@@ -39,10 +39,10 @@ const AGENT_SYSTEM_PROMPT = `You are a recipe generation assistant. Return ONLY 
   "title":"Specific Recipe Name",
   "description":"Brief description",
   "ingredients":[
-    {"name":"salmon fillet","amount":"6","unit":"oz"},
-    {"name":"olive oil","amount":"2","unit":"tbsp"},
-    {"name":"salt","amount":"0.5","unit":"tsp"},
-    {"name":"garlic","amount":"2","unit":"clove"}
+    {"name":"main protein","amount":"6","unit":"oz"},
+    {"name":"cooking fat","amount":"2","unit":"tbsp"},
+    {"name":"seasoning","amount":"0.5","unit":"tsp"},
+    {"name":"aromatics","amount":"2","unit":"clove"}
   ],
   "instructions":["Step 1","Step 2"],
   "prepTime":15,
@@ -52,8 +52,8 @@ const AGENT_SYSTEM_PROMPT = `You are a recipe generation assistant. Return ONLY 
 }}
 
 CRITICAL INGREDIENT RULES - READ CAREFULLY:
-- NEVER use "or" in ingredient names (NO "salmon or tuna", NO "broth or water", NO "dill or parsley")
-- Pick ONE specific ingredient per line - be decisive
+- NEVER use "or" in ingredient names (NO "protein A or protein B", NO "broth or water", NO "herb A or herb B")
+- Pick ONE specific ingredient per line - be decisive and creative
 - If you're tempted to use "or" for recipe variants, pick ONE option and use variant naming (see naming rules below)
 - EVERY SINGLE INGREDIENT MUST HAVE A UNIT - NO EXCEPTIONS
   * NEVER leave unit empty, null, or as empty string ("")
@@ -67,14 +67,17 @@ CRITICAL INGREDIENT RULES - READ CAREFULLY:
 CRITICAL NAMING RULES:
 - Recipe titles must be SPECIFIC and describe the EXACT dish
 - Include the main protein/ingredient in the title
+- BE CREATIVE AND VARY YOUR CHOICES - don't default to the same proteins repeatedly
 - If you want to suggest variants (different proteins, liquids, herbs), pick ONE and use parenthetical naming:
   * For MAJOR changes (proteins, main veggies): Put specific ingredient in title
-    - Examples: "Grilled Salmon with Lemon Butter", "Grilled Tuna with Lemon Butter"
-    - NOT "Grilled Fish" or "Grilled Salmon or Tuna"
+    - Examples: "Pan-Seared Duck Breast with Cherry Glaze", "Baked Cod with Herb Crust"
+    - NOT "Grilled Fish" or "Protein A or Protein B"
   * For MINOR changes (broths, herbs, oils): Use parenthetical differentiator
-    - Examples: "Chicken Noodle Soup (Vegetable Broth)", "Herb-Crusted Cod (Fresh Dill)"
-    - NOT "Chicken Soup with Broth or Water" or "Cod with Dill or Parsley"
+    - Examples: "Beef Stew (Red Wine Base)", "Roasted Vegetables (Olive Oil)"
+    - NOT "Stew with Wine or Beer" or "Vegetables with Oil or Butter"
 - The user can request more recipes if they want variants - you should create ONE specific recipe per request
+
+VARIETY IS KEY: Mix up proteins (beef, pork, chicken, turkey, duck, various fish, shrimp, tofu, beans, etc.), cooking methods (baking, grilling, braising, stir-frying, roasting, steaming, etc.), and cuisines (Italian, Mexican, Thai, Indian, French, Japanese, etc.).
 
 REMEMBER: Every ingredient must have amount AND unit. No exceptions. No empty units. No "or" in ingredient names or titles.`;
 
@@ -217,7 +220,8 @@ function categorizeIngredient(name: string): string {
 export async function generateRecipeWithAgent(
   prompt: string,
   userId?: string,
-  mealType?: string | string[]
+  mealType?: string | string[],
+  temperature: number = 0.7 // Lower for consistency, higher (1.1-1.3) for variety when generating multiple recipes
 ): Promise<{ recipeId: string; recipeTitle: string; newIngredients: string[] }> {
   try {
     const completion = await openai.chat.completions.create({
@@ -229,6 +233,7 @@ export async function generateRecipeWithAgent(
       max_completion_tokens: 8000,
       reasoning_effort: 'low' as any,
       response_format: { type: 'json_object' },
+      temperature,
     });
 
     console.log('OpenAI completion response:', JSON.stringify(completion, null, 2));
@@ -627,8 +632,9 @@ export async function generateRecipesFromParams(
 ): Promise<{ recipeIds: string[]; newIngredients: string[] }> {
   const prompt = buildPromptFromParams(params, mealType, userStyles, inventory);
 
+  // Use higher temperature for variety when generating multiple recipes from same prompt
   const results = await Promise.all(
-    Array.from({ length: count }, () => generateRecipeWithAgent(prompt, userId, mealType))
+    Array.from({ length: count }, () => generateRecipeWithAgent(prompt, userId, mealType, 1.2))
   );
 
   const recipeIds = results.map(r => r.recipeId);
