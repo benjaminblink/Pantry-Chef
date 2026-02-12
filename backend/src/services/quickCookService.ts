@@ -92,10 +92,29 @@ Each recipe should:
     if (!fullRecipe) continue;
 
     // Mark which ingredients are in pantry
+    // Use both exact ID matching and name-based similarity matching
+    const { calculateSimilarity, normalizeIngredientName } = await import('../utils/ingredientNormalizer.js');
+
     const ingredientsWithPantryStatus = fullRecipe.recipeIngredients.map(ri => {
-      const inPantry = inventory.some(
-        inv => inv.ingredientId === ri.ingredientId
-      );
+      // First try exact ID match
+      let inPantry = inventory.some(inv => inv.ingredientId === ri.ingredientId);
+
+      // If not found by ID, try similarity matching by name
+      if (!inPantry) {
+        const normalizedRecipeName = normalizeIngredientName(ri.ingredient.name);
+
+        for (const invItem of inventory) {
+          const normalizedPantryName = normalizeIngredientName(invItem.ingredient.name);
+          const similarity = calculateSimilarity(normalizedRecipeName, normalizedPantryName);
+
+          // 85% similarity threshold - same as recipe agent
+          if (similarity >= 0.85) {
+            console.log(`[Pantry Matching] Found similar ingredient: "${ri.ingredient.name}" matches pantry "${invItem.ingredient.name}" (${Math.round(similarity * 100)}% match)`);
+            inPantry = true;
+            break;
+          }
+        }
+      }
 
       return {
         id: ri.ingredientId,

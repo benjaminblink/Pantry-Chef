@@ -132,11 +132,13 @@ interface AgentRecipeResponse {
 
 /**
  * Check if ingredient exists in database, return ID or null
+ * Now uses similarity matching to find existing ingredients before creating duplicates
  */
 async function findIngredient(name: string): Promise<string | null> {
   const normalizedName = normalizeIngredientName(name);
 
-  const ingredient = await prisma.ingredient.findFirst({
+  // First try exact match
+  const exactMatch = await prisma.ingredient.findFirst({
     where: {
       name: {
         equals: normalizedName,
@@ -146,7 +148,35 @@ async function findIngredient(name: string): Promise<string | null> {
     select: { id: true },
   });
 
-  return ingredient?.id || null;
+  if (exactMatch) return exactMatch.id;
+
+  // If no exact match, try similarity matching
+  // Get all ingredients that might be similar (basic filter to reduce DB load)
+  const firstWord = normalizedName.split(' ')[0];
+  const potentialMatches = await prisma.ingredient.findMany({
+    where: {
+      OR: [
+        { name: { contains: firstWord, mode: 'insensitive' } },
+        { name: { startsWith: normalizedName.substring(0, 3), mode: 'insensitive' } }
+      ]
+    },
+    select: { id: true, name: true },
+    take: 50 // Limit to avoid performance issues
+  });
+
+  // Use Levenshtein distance to find similar ingredients
+  const { calculateSimilarity } = await import('../utils/ingredientNormalizer.js');
+
+  for (const ingredient of potentialMatches) {
+    const similarity = calculateSimilarity(normalizedName, ingredient.name);
+    // If similarity is >= 85%, consider it the same ingredient
+    if (similarity >= 0.85) {
+      console.log(`[Ingredient Matching] Found similar ingredient: "${normalizedName}" -> "${ingredient.name}" (${Math.round(similarity * 100)}% match)`);
+      return ingredient.id;
+    }
+  }
+
+  return null;
 }
 
 /**

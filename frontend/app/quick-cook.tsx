@@ -20,6 +20,7 @@ export default function QuickCookScreen() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const hasCheckedAccess = useRef(false);
+  const hasGeneratedRecipes = useRef(false); // Track if recipes were already generated
 
   useFocusEffect(
     useCallback(() => {
@@ -38,7 +39,11 @@ export default function QuickCookScreen() {
       }
       // Reset the flag when user has access (after returning from paywall)
       hasCheckedAccess.current = false;
-      generateRecipes();
+
+      // Only generate recipes if we haven't already (prevents regeneration when returning from recipe detail)
+      if (!hasGeneratedRecipes.current) {
+        generateRecipes();
+      }
     }, [checkProAccess])
   );
 
@@ -61,6 +66,7 @@ export default function QuickCookScreen() {
       setLoading(true);
       const response = await quickCook(3);
       setRecipes(response.recipes);
+      hasGeneratedRecipes.current = true; // Mark as generated
       await refreshBalance();
     } catch (error) {
       console.error('Error generating recipes:', error);
@@ -96,6 +102,7 @@ export default function QuickCookScreen() {
           text: 'Generate',
           onPress: async () => {
             setGenerating(true);
+            hasGeneratedRecipes.current = false; // Reset flag so new generation happens
             await generateRecipes();
             setGenerating(false);
           }
