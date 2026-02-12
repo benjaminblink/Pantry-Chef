@@ -156,23 +156,39 @@ async function createIngredientIfNeeded(
   name: string,
   category: string = 'Other'
 ): Promise<string> {
-  const existingId = await findIngredient(name);
-  if (existingId) return existingId;
-
   const normalizedName = normalizeIngredientName(name);
 
-  const ingredient = await prisma.ingredient.create({
-    data: {
-      name: normalizedName,
-      category,
-      caloriesPer100g: 0,
-      proteinPer100g: 0,
-      carbsPer100g: 0,
-      fatPer100g: 0,
-    },
-  });
-
-  return ingredient.id;
+  try {
+    // Try to create the ingredient
+    const ingredient = await prisma.ingredient.create({
+      data: {
+        name: normalizedName,
+        category,
+        caloriesPer100g: 0,
+        proteinPer100g: 0,
+        carbsPer100g: 0,
+        fatPer100g: 0,
+      },
+    });
+    return ingredient.id;
+  } catch (error: any) {
+    // If unique constraint failed, ingredient was created by another request
+    // Fetch and return the existing ingredient
+    if (error.code === 'P2002') {
+      const existing = await prisma.ingredient.findFirst({
+        where: {
+          name: {
+            equals: normalizedName,
+            mode: 'insensitive',
+          },
+        },
+        select: { id: true },
+      });
+      if (existing) return existing.id;
+    }
+    // Re-throw other errors
+    throw error;
+  }
 }
 
 /**
