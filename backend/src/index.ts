@@ -95,10 +95,10 @@ const limiter = rateLimit({
   max: 100, // limit each IP to 100 requests per windowMs
   standardHeaders: true,
   legacyHeaders: false,
-  handler: (req, res) => {
+  handler: (_req, res) => {
     res.status(429).json({
       error: 'Too many requests from this IP, please try again later.',
-      retryAfter: Math.ceil((req.rateLimit?.resetTime?.getTime() ?? Date.now()) / 1000)
+      retryAfter: Math.ceil(Date.now() / 1000) + 900 // 15 minutes from now
     });
   },
 });
