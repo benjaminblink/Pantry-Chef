@@ -551,7 +551,7 @@ router.post('/import-url', authMiddleware, async (req: Request, res: Response) =
     const sourceWebsite = urlObj.hostname.replace('www.', '');
 
     // Create ingredients and get IDs
-    const ingredientData = await Promise.all(
+    const rawIngredientData = await Promise.all(
       parsedRecipe.ingredients.map(async (ing, index) => {
         const ingredientId = await findOrCreateIngredient(ing.name);
         return {
@@ -563,6 +563,25 @@ router.post('/import-url', authMiddleware, async (req: Request, res: Response) =
         };
       })
     );
+
+    // Deduplicate by ingredientId (merge duplicate ingredients)
+    const ingredientMap = new Map<string, typeof rawIngredientData[0]>();
+    for (const item of rawIngredientData) {
+      const existing = ingredientMap.get(item.ingredientId);
+      if (existing) {
+        // Merge: sum amounts if same unit, otherwise keep first occurrence
+        if (existing.unit === item.unit) {
+          existing.amount += item.amount;
+          existing.notes = existing.notes
+            ? `${existing.notes}; ${item.notes || ''}`.trim()
+            : item.notes;
+        }
+      } else {
+        ingredientMap.set(item.ingredientId, item);
+      }
+    }
+
+    const ingredientData = Array.from(ingredientMap.values());
 
     // Infer meal type from title
     const title = parsedRecipe.title.toLowerCase();
