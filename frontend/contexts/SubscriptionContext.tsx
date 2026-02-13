@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import Purchases, { CustomerInfo, PurchasesOffering } from 'react-native-purchases';
 import {
   initializeRevenueCat,
@@ -98,6 +99,21 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     } else if (!isAuthenticated) {
       logoutFromRevenueCat();
     }
+  }, [isAuthenticated, user?.id]);
+
+  // Re-sync user when app comes to foreground
+  // This handles cases where RevenueCat state was lost while app was backgrounded
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+      if (nextAppState === 'active' && isAuthenticated && user?.id) {
+        console.log('SubscriptionContext: App became active, re-syncing user');
+        syncUserWithRevenueCat(user.id);
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
   }, [isAuthenticated, user?.id]);
 
   const initRevenueCat = async () => {
@@ -308,7 +324,9 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       setLoading(true);
       setError(null);
 
-      const restoredInfo = await restorePurchases();
+      // Pass user ID to ensure we're restoring for the correct user
+      // This is critical - if RC logged us out, restorePurchases() on anonymous user won't work
+      const restoredInfo = await restorePurchases(user?.id);
       handleCustomerInfoUpdate(restoredInfo);
 
       return true;

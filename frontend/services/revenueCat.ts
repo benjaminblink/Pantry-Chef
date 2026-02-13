@@ -216,10 +216,22 @@ export const purchasePackage = async (packageToPurchase: any) => {
  * Restore previous purchases
  * Useful when user reinstalls app or switches devices
  *
+ * IMPORTANT: If userId is provided, this will first ensure the user is logged in
+ * to RevenueCat before restoring. This is critical because purchases are tied
+ * to the user ID, not the anonymous session.
+ *
+ * @param userId - Optional user ID to log in before restoring
  * @returns Restored customer info
  */
-export const restorePurchases = async () => {
+export const restorePurchases = async (userId?: string) => {
   try {
+    // If we have a user ID, ensure we're logged in as that user first
+    // This is critical because restorePurchases() only works for the current RC user
+    if (userId) {
+      console.log('RevenueCat: Logging in as user before restore:', userId);
+      await Purchases.logIn(userId);
+    }
+
     const customerInfo = await Purchases.restorePurchases();
 
     console.log('RevenueCat: Purchases restored');
