@@ -12,7 +12,7 @@
     "android:emulator": "node scripts/start-emulator.js",
     "prebuild": "expo prebuild --platform android",
     "setup-signing": "node scripts/setup-signing.js",
-    "build:aab": "cd android && cross-env JAVA_HOME=\"C:\\Program Files\\Android\\Android Studio\\jbr\" ANDROID_HOME=\"C:\\Users\\bushb\\AppData\\Local\\Android\\Sdk\" EXPO_PUBLIC_PRODUCTION_API_URL=\"https://pantry-chef-production.up.railway.app/api\" gradlew.bat bundleRelease",
+    "build:aab": "cross-env JAVA_HOME=\"C:\\Program Files\\Android\\Android Studio\\jbr\" ANDROID_HOME=\"C:\\Users\\bushb\\AppData\\Local\\Android\\Sdk\" EXPO_PUBLIC_PRODUCTION_API_URL=\"https://pantry-chef-production.up.railway.app/api\" android\\gradlew.bat -p android bundleRelease",
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint"

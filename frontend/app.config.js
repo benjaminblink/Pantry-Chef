@@ -12,7 +12,7 @@ export default {
       supportsTablet: true,
     },
     android: {
-      package: 'com.pantrychef.app',
+      package: 'com.food.pantrychef.app',
       adaptiveIcon: {
         backgroundColor: '#E6F4FE',
         foregroundImage: './assets/images/android-icon-foreground.png',
