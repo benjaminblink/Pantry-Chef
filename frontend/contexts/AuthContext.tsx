@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL } from '../config';
 
@@ -97,11 +97,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const isAuthenticated = useMemo(() => !!token && !!user, [token, user]);
+
   const value: AuthContextType = {
     user,
     token,
     loading,
-    isAuthenticated: !!token && !!user,
+    isAuthenticated,
     login,
     logout,
     refreshUser,
