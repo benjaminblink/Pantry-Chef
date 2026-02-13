@@ -226,6 +226,8 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
 
   const handleCustomerInfoUpdate = useCallback((info: CustomerInfo) => {
     console.log('📥 handleCustomerInfoUpdate called');
+    console.log('   Active entitlements:', Object.keys(info.entitlements.active));
+    console.log('   All entitlements:', Object.keys(info.entitlements.all));
 
     setCustomerInfo(info);
 
@@ -233,11 +235,14 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     const hasProAccess = typeof info.entitlements.active[ENTITLEMENT_PRO] !== 'undefined';
     const hasPowerAccess = typeof info.entitlements.active[ENTITLEMENT_POWER] !== 'undefined';
 
+    console.log('   hasProAccess:', hasProAccess, 'hasPowerAccess:', hasPowerAccess);
+
     setIsProUser(hasProAccess); // true for Pro OR Power
     setIsPowerUser(hasPowerAccess);
 
     const tier: 'power' | 'pro' | null = hasPowerAccess ? 'power' : hasProAccess ? 'pro' : null;
     setSubscriptionTier(tier);
+    console.log('   Final tier:', tier);
 
     // Update subscription status using the highest-tier entitlement
     const activeEntitlement = hasPowerAccess
@@ -324,10 +329,21 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       setLoading(true);
       setError(null);
 
+      console.log('🔄 Starting restore purchases for user:', user?.id);
+
       // Pass user ID to ensure we're restoring for the correct user
       // This is critical - if RC logged us out, restorePurchases() on anonymous user won't work
       const restoredInfo = await restorePurchases(user?.id);
+
+      console.log('✅ Restore complete. Active entitlements:', Object.keys(restoredInfo.entitlements.active));
+      console.log('📦 All entitlements (including expired):', Object.keys(restoredInfo.entitlements.all));
+
       handleCustomerInfoUpdate(restoredInfo);
+
+      // Force a fresh customer info check after restore to ensure we have latest state
+      // This handles edge cases where RevenueCat needs a moment to sync
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await loadCustomerInfo();
 
       return true;
     } catch (err: any) {
