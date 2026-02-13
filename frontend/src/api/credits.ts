@@ -11,6 +11,12 @@ async function getAuthHeaders(): Promise<HeadersInit> {
 export async function getCreditBalance(): Promise<number> {
   const headers = await getAuthHeaders();
   const response = await fetch(`${API_URL}/credits/balance`, { headers });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: response.statusText }));
+    throw new Error(error.message || error.error || `Failed to get balance (${response.status})`);
+  }
+
   const data = await response.json();
   if (!data.success) throw new Error(data.message || 'Failed to get balance');
   return data.balance;
@@ -37,6 +43,12 @@ export interface CreditTransaction {
 export async function getCreditStatus(): Promise<CreditStatus> {
   const headers = await getAuthHeaders();
   const response = await fetch(`${API_URL}/credits/status`, { headers });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: response.statusText }));
+    throw new Error(error.message || error.error || `Failed to get credit status (${response.status})`);
+  }
+
   const data = await response.json();
   if (!data.success) throw new Error(data.message || 'Failed to get credit status');
   return {
@@ -62,6 +74,12 @@ export async function getTransactions(options?: {
   if (options?.type) params.append('type', options.type);
 
   const response = await fetch(`${API_URL}/credits/transactions?${params}`, { headers });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: response.statusText }));
+    throw new Error(error.message || error.error || `Failed to get transactions (${response.status})`);
+  }
+
   const data = await response.json();
   if (!data.success) throw new Error(data.message || 'Failed to get transactions');
   return { transactions: data.transactions, total: data.total };
@@ -81,6 +99,12 @@ export async function syncSubscriptionStatus(
     headers,
     body: JSON.stringify({ tier, entitlements }),
   });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: response.statusText }));
+    throw new Error(error.message || error.error || `Failed to sync subscription (${response.status})`);
+  }
+
   const data = await response.json();
   if (!data.success) throw new Error(data.message || 'Failed to sync subscription');
   return { balance: data.balance, tier: data.tier };
