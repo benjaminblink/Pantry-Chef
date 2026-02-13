@@ -330,11 +330,13 @@ export async function generateRecipeWithAgent(
         const category = categorizeIngredient(ing.name);
         const existingId = await findIngredient(ing.name);
 
-        if (!existingId) {
+        let ingredientId: string;
+        if (existingId) {
+          ingredientId = existingId;
+        } else {
           newIngredients.push(ing.name);
+          ingredientId = await createIngredientIfNeeded(ing.name, category);
         }
-
-        const ingredientId = await createIngredientIfNeeded(ing.name, category);
 
         let unit = ing.unit?.trim() || '';
         if (!unit) {
