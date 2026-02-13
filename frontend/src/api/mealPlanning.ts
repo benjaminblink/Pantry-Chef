@@ -27,6 +27,12 @@ export async function getUserPreferences(category?: string, active?: boolean): P
 
   const headers = await getAuthHeaders();
   const response = await fetch(`${API_URL}/preferences?${params}`, { headers });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: response.statusText }));
+    throw new Error(error.message || error.error || `Failed to get preferences (${response.status})`);
+  }
+
   const data = await response.json();
   return data.preferences;
 }
@@ -34,6 +40,12 @@ export async function getUserPreferences(category?: string, active?: boolean): P
 export async function getPreferenceLibrary(): Promise<PreferenceLibrary> {
   const headers = await getAuthHeaders();
   const response = await fetch(`${API_URL}/preferences/library`, { headers });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: response.statusText }));
+    throw new Error(error.message || error.error || `Failed to get preference library (${response.status})`);
+  }
+
   const data = await response.json();
   return data.library;
 }
@@ -41,6 +53,12 @@ export async function getPreferenceLibrary(): Promise<PreferenceLibrary> {
 export async function checkPreferenceConflicts(): Promise<ConflictWarning[]> {
   const headers = await getAuthHeaders();
   const response = await fetch(`${API_URL}/preferences/conflicts`, { headers });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: response.statusText }));
+    throw new Error(error.message || error.error || `Failed to check conflicts (${response.status})`);
+  }
+
   const data = await response.json();
   return data.conflicts;
 }
@@ -72,16 +90,29 @@ export async function updatePreference(
     headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: JSON.stringify(updates)
   });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: response.statusText }));
+    console.error('Update preference error:', error);
+    throw new Error(error.message || error.error || `Failed to update preference (${response.status})`);
+  }
+
   const data = await response.json();
   return data.preference;
 }
 
 export async function deletePreference(id: string): Promise<void> {
   const headers = await getAuthHeaders();
-  await fetch(`${API_URL}/preferences/${id}`, {
+  const response = await fetch(`${API_URL}/preferences/${id}`, {
     method: 'DELETE',
     headers
   });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: response.statusText }));
+    console.error('Delete preference error:', error);
+    throw new Error(error.message || error.error || `Failed to delete preference (${response.status})`);
+  }
 }
 
 // Inventory API
@@ -91,6 +122,12 @@ export async function getUserInventory(available?: boolean): Promise<UserInvento
 
   const headers = await getAuthHeaders();
   const response = await fetch(`${API_URL}/inventory?${params}`, { headers });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: response.statusText }));
+    throw new Error(error.message || error.error || `Failed to get inventory (${response.status})`);
+  }
+
   const data = await response.json();
   return data.inventory;
 }
@@ -107,6 +144,12 @@ export async function addInventoryItem(
     headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: JSON.stringify({ ingredientId, amount, unit, expiresAt })
   });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: response.statusText }));
+    throw new Error(error.message || error.error || `Failed to add inventory item (${response.status})`);
+  }
+
   const data = await response.json();
   return data.inventory;
 }
@@ -121,6 +164,12 @@ export async function updateInventoryItem(
     headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: JSON.stringify(updates)
   });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: response.statusText }));
+    throw new Error(error.message || error.error || `Failed to update inventory item (${response.status})`);
+  }
+
   const data = await response.json();
   return data.inventory;
 }
@@ -204,6 +253,12 @@ export async function getMealPlans(
 
   const headers = await getAuthHeaders();
   const response = await fetch(`${API_URL}/meal-plans?${params}`, { headers });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: response.statusText }));
+    throw new Error(error.message || error.error || `Failed to get meal plans (${response.status})`);
+  }
+
   const data = await response.json();
   return data.mealPlans;
 }
@@ -214,6 +269,12 @@ export async function getMealPlan(id: string): Promise<{
 }> {
   const headers = await getAuthHeaders();
   const response = await fetch(`${API_URL}/meal-plans/${id}`, { headers });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: response.statusText }));
+    throw new Error(error.message || error.error || `Failed to get meal plan (${response.status})`);
+  }
+
   const data = await response.json();
   return data;
 }
